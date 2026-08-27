@@ -23,7 +23,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "MealFlow benötigt die Kamera, um Barcodes von Lebensmitteln zu scannen.",
+          "cameraPermission": "MealFlow benötigt die Kamera, um Barcodes für Einkauf und Vorrat zu scannen.",
           "barcodeScannerEnabled": true,
           "recordAudioAndroid": false
         }
