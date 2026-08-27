@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 
-export const colors = {
+export type ThemePaletteName = 'light' | 'dark';
+
+export const lightColors = {
   background: '#F6F7F4',
   surface: '#FFFFFF',
   surfaceMuted: '#EFF1EC',
@@ -15,8 +17,32 @@ export const colors = {
   dangerSoft: '#F8EAEA',
   warning: '#9B6B20',
   shadow: '#111111',
-  overlay: 'rgba(15, 20, 16, 0.42)',
+  overlay: 'rgba(15, 20, 16, 0.28)',
 };
+
+export const darkColors = {
+  background: '#0F1210',
+  surface: '#171B18',
+  surfaceMuted: '#202621',
+  text: '#F3F6F2',
+  textSecondary: '#B5BDB4',
+  textTertiary: '#858F86',
+  border: '#2B332C',
+  accent: '#79C891',
+  accentSoft: '#1D3324',
+  accentStrong: '#9AD8AB',
+  danger: '#F18484',
+  dangerSoft: '#3A2020',
+  warning: '#E1B86E',
+  shadow: '#000000',
+  overlay: 'rgba(0, 0, 0, 0.46)',
+};
+
+export const colors = { ...lightColors };
+
+export function setThemePalette(palette: ThemePaletteName) {
+  Object.assign(colors, palette === 'dark' ? darkColors : lightColors);
+}
 
 export const radius = {
   sm: 12,
@@ -82,15 +108,19 @@ export const typography = {
   },
 };
 
-export const shadow = Platform.select({
-  ios: {
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-  },
-  android: {
-    elevation: 2,
-  },
-  default: {},
-});
+export function getShadow() {
+  return Platform.select({
+    ios: {
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.05,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 6 },
+    },
+    android: {
+      elevation: 1,
+    },
+    default: {},
+  }) ?? {};
+}
+
+export const shadow = getShadow();
