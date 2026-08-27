@@ -126,12 +126,12 @@ function QuantitySheet({ visible, amount, unit, onClose, onDone }: { visible: bo
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <View style={{ flex: 1 }}>
-              <Picker selectedValue={draftAmount} onValueChange={(value) => setDraftAmount(Number(value))} itemStyle={{ color: TEXT }} themeVariant="dark">
+              <Picker selectedValue={draftAmount} onValueChange={(value) => setDraftAmount(Number(value))} itemStyle={{ color: TEXT }}>
                 {AMOUNTS.map((value) => <Picker.Item key={value} label={String(value).replace('.5', ',5')} value={value} />)}
               </Picker>
             </View>
             <View style={{ flex: 1 }}>
-              <Picker selectedValue={draftUnit} onValueChange={(value) => setDraftUnit(String(value))} itemStyle={{ color: TEXT }} themeVariant="dark">
+              <Picker selectedValue={draftUnit} onValueChange={(value) => setDraftUnit(String(value))} itemStyle={{ color: TEXT }}>
                 {UNITS.map((value) => <Picker.Item key={value} label={value} value={value} />)}
               </Picker>
             </View>
@@ -336,7 +336,7 @@ function MoreScreen() {
         <Text style={{ color: TEXT, fontSize: 18, fontWeight: '800' }}>Installation</Text>
         <Text style={{ color: MUTED, lineHeight: 21 }}>iPhone: SideStore IPA. Android: installierbare APK. Beide Builds werden über GitHub Actions erzeugt.</Text>
       </View>
-      {supabase ? <PrimaryButton label="Abmelden" secondary onPress={() => { supabase.auth.signOut().catch(() => undefined); }} /> : null}
+      {supabase ? <PrimaryButton label="Abmelden" secondary onPress={() => { supabase?.auth.signOut().catch(() => undefined); }} /> : null}
     </ScrollView>
   );
 }
@@ -350,7 +350,8 @@ function MainApp() {
   const [recipeToPlan, setRecipeToPlan] = useState<Recipe | null>(null);
 
   useEffect(() => {
-    if (!supabase) return;
+    const client = supabase;
+    if (!client) return;
     Promise.all([loadShopping(), loadMealPlan()])
       .then(([shopping, plan]) => {
         setItems(shopping);
@@ -359,12 +360,12 @@ function MainApp() {
       .catch(() => undefined)
       .finally(() => setReady(true));
 
-    const channel = supabase.channel('mealflow-live')
+    const channel = client.channel('mealflow-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items' }, () => loadShopping().then(setItems).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan' }, () => loadMealPlan().then((plan) => setMeals(Object.fromEntries(plan.map((entry) => [entry.day, entry.meal ?? ''])))).catch(() => undefined))
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { client.removeChannel(channel); };
   }, []);
 
   const addRecipeIngredients = (recipe: Recipe) => {
