@@ -1,0 +1,32 @@
+{
+  "name": "mealflow",
+  "version": "1.1.0",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "prebuild:ios": "expo prebuild --platform ios --clean --no-install",
+    "prebuild:android": "expo prebuild --platform android --clean --no-install",
+    "build:android:apk": "cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@react-native-picker/picker": "2.11.4",
+    "@supabase/supabase-js": "2.112.4",
+    "expo": "57.0.17",
+    "expo-haptics": "57.0.1",
+    "expo-sqlite": "57.0.1",
+    "expo-status-bar": "57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "5.9.1",
+    "react-native-url-polyfill": "4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "typescript": "~5.9.2"
+  }
+}
