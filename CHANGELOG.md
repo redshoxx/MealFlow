@@ -3,7 +3,7 @@
 ## 2.2.0
 
 - Rezeptseite aus der Hauptnavigation entfernt und durch einen persönlichen Kalorienzähler ersetzt.
-- Individuelle Ernährungseinträge und Tagesziele pro Benutzer mit eigener Supabase-RLS eingeführt.
+- Individuelle Ernährungseinträge und Tagesziele pro Benutzer mit eigener Supabase-RLS eingeführt; Haushaltsmitglieder sehen die Ernährungstage der anderen nicht.
 - Professionelle Tagesübersicht mit verbleibenden Kalorien, Tagesziel und Makro-Fortschritt.
 - Frühstück, Mittagessen, Abendessen und Snacks als übersichtliche getrennte Bereiche.
 - Barcode-Scanner über expo-camera für EAN-13, EAN-8 und UPC-Barcodes.
@@ -12,6 +12,7 @@
 - Persönliche Kalorien- und Makroziele können direkt in der Kalorienansicht angepasst werden.
 - Datumsnavigation ermöglicht das Anzeigen vergangener Ernährungstage.
 - Startseiten-Einstellung „Rezepte“ wird automatisch auf „Kalorien“ migriert.
+- Hinweis in der Oberfläche, dass Open-Food-Facts-Community-Daten unvollständig oder fehlerhaft sein können.
 - App-Version 2.2.0, iOS Build 12, Android Version Code 12.
 
 ## 2.1.5
