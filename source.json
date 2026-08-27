@@ -2,7 +2,7 @@
   "name": "MealFlow",
   "subtitle": "Automatische SideStore Updates für MealFlow",
   "description": "Offizielle MealFlow SideStore Source. Neue Builds werden automatisch über GitHub Releases veröffentlicht.",
-  "iconURL": "https://github.com/redshoxx/MealFlow/releases/download/sidestore-v2.1.5-b73/MealFlow-AppIcon.png",
+  "iconURL": "https://github.com/redshoxx/MealFlow/releases/download/sidestore-v2.2.0-b83/MealFlow-AppIcon.png",
   "website": "https://github.com/redshoxx/MealFlow",
   "tintColor": "#2F6B45",
   "featuredApps": ["at.mealflow.app"],
@@ -13,17 +13,17 @@
       "developerName": "redshoxx",
       "subtitle": "Gemeinsam planen, einkaufen und kochen",
       "localizedDescription": "MealFlow verbindet den gemeinsamen Abendessen-Wochenplan, die Einkaufsliste und Rezepte für deinen Haushalt auf iPhone und Android.",
-      "iconURL": "https://github.com/redshoxx/MealFlow/releases/download/sidestore-v2.1.5-b73/MealFlow-AppIcon.png",
+      "iconURL": "https://github.com/redshoxx/MealFlow/releases/download/sidestore-v2.2.0-b83/MealFlow-AppIcon.png",
       "tintColor": "#2F6B45",
       "category": "lifestyle",
       "versions": [
         {
-          "version": "2.1.5",
-          "buildVersion": "73",
-          "date": "2026-08-27T14:04:47Z",
-          "localizedDescription": "MealFlow 2.1.5 – automatisches SideStore Update aus GitHub.",
-          "downloadURL": "https://github.com/redshoxx/MealFlow/releases/download/sidestore-v2.1.5-b73/MealFlow-SideStore.ipa",
-          "size": 10418697
+          "version": "2.2.0",
+          "buildVersion": "83",
+          "date": "2026-08-27T14:34:22Z",
+          "localizedDescription": "MealFlow 2.2.0 – automatisches SideStore Update aus GitHub.",
+          "downloadURL": "https://github.com/redshoxx/MealFlow/releases/download/sidestore-v2.2.0-b83/MealFlow-SideStore.ipa",
+          "size": 11110218
         }
       ],
       "appPermissions": {
