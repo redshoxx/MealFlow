@@ -24,63 +24,8 @@ jobs:
 
       - name: Patch recipe image rendering
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('App.tsx')
-          text = path.read_text()
-
-          anchor = "  return `Zuletzt am ${date.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}`;\n}\n\nfunction AuthScreen()"
-          insert = """  return `Zuletzt am ${date.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}`;
-}
-
-function RecipeArtwork({ recipe, variant }: { recipe: Recipe; variant: 'card' | 'detail' }) {
-  const [uri, setUri] = useState(recipe.image);
-  useEffect(() => { setUri(recipe.image); }, [recipe.image, recipe.imageFallback]);
-
-  const handleError = () => {
-    if (uri && recipe.imageFallback && uri !== recipe.imageFallback) {
-      setUri(recipe.imageFallback);
-      return;
-    }
-    setUri(undefined);
-  };
-
-  const imageStyle = variant === 'detail' ? styles.detailImage : styles.recipeImage;
-  const placeholderStyle = variant === 'detail' ? styles.detailPlaceholder : styles.recipeImagePlaceholder;
-  const iconSize = variant === 'detail' ? 42 : 28;
-
-  if (!uri) {
-    return <View style={placeholderStyle}><MaterialCommunityIcons name={recipe.sourceKind === 'mealflow' ? 'silverware-fork-knife' : 'chef-hat'} size={iconSize} color={colors.accent} /></View>;
-  }
-
-  return <Image source={{ uri }} style={imageStyle} resizeMode="cover" onError={handleError} accessibilityLabel={`Bild zu ${recipe.title}`} />;
-}
-
-function AuthScreen()"""
-          if anchor not in text:
-            raise SystemExit('Could not find RecipeArtwork insertion anchor')
-          text = text.replace(anchor, insert, 1)
-
-          old_detail = "{recipe?.image ? <Image source={{ uri: recipe.image }} style={styles.detailImage} resizeMode=\"cover\" /> : <View style={styles.detailPlaceholder}><MaterialCommunityIcons name=\"chef-hat\" size={42} color={colors.accent} /></View>}"
-          new_detail = "{recipe ? <RecipeArtwork recipe={recipe} variant=\"detail\" /> : <View style={styles.detailPlaceholder}><MaterialCommunityIcons name=\"chef-hat\" size={42} color={colors.accent} /></View>}"
-          if old_detail not in text:
-            raise SystemExit('Could not find recipe detail image expression')
-          text = text.replace(old_detail, new_detail, 1)
-
-          old_card = "{recipe.image ? <Image source={{ uri: recipe.image }} style={styles.recipeImage} resizeMode=\"cover\" /> : <View style={styles.recipeImagePlaceholder}><MaterialCommunityIcons name={recipe.sourceKind === 'mealflow' ? 'silverware-fork-knife' : 'chef-hat'} size={28} color={colors.accent} /></View>}"
-          new_card = "<RecipeArtwork recipe={recipe} variant=\"card\" />"
-          if old_card not in text:
-            raise SystemExit('Could not find recipe card image expression')
-          text = text.replace(old_card, new_card, 1)
-
-          old_hint = "Web-Rezeptsuche + MealFlow AT/DE + TheMealDB · beim Scrollen werden weitere Treffer geladen"
-          new_hint = "Web-Rezeptsuche mit Originalbildern + MealFlow AT/DE + TheMealDB · beim Scrollen werden weitere Treffer geladen"
-          if old_hint in text:
-            text = text.replace(old_hint, new_hint, 1)
-
-          path.write_text(text)
-          PY
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpwYXRoID0gUGF0aCgiQXBwLnRzeCIpCnRleHQgPSBwYXRoLnJlYWRfdGV4dCgpCgphbmNob3IgPSAiICByZXR1cm4gYFp1bGV0enQgYW0gJHtkYXRlLnRvTG9jYWxlRGF0ZVN0cmluZygnZGUtQVQnLCB7IGRheTogJzItZGlnaXQnLCBtb250aDogJzItZGlnaXQnIH0pfWA7XG59XG5cbmZ1bmN0aW9uIEF1dGhTY3JlZW4oKSIKaW5zZXJ0ID0gIiIiICByZXR1cm4gYFp1bGV0enQgYW0gJHtkYXRlLnRvTG9jYWxlRGF0ZVN0cmluZygnZGUtQVQnLCB7IGRheTogJzItZGlnaXQnLCBtb250aDogJzItZGlnaXQnIH0pfWA7Cn0KCmZ1bmN0aW9uIFJlY2lwZUFydHdvcmsoeyByZWNpcGUsIHZhcmlhbnQgfTogeyByZWNpcGU6IFJlY2lwZTsgdmFyaWFudDogJ2NhcmQnIHwgJ2RldGFpbCcgfSkgewogIGNvbnN0IFt1cmksIHNldFVyaV0gPSB1c2VTdGF0ZShyZWNpcGUuaW1hZ2UpOwogIHVzZUVmZmVjdCgoKSA9PiB7IHNldFVyaShyZWNpcGUuaW1hZ2UpOyB9LCBbcmVjaXBlLmltYWdlLCByZWNpcGUuaW1hZ2VGYWxsYmFja10pOwoKICBjb25zdCBoYW5kbGVFcnJvciA9ICgpID0+IHsKICAgIGlmICh1cmkgJiYgcmVjaXBlLmltYWdlRmFsbGJhY2sgJiYgdXJpICE9PSByZWNpcGUuaW1hZ2VGYWxsYmFjaykgewogICAgICBzZXRVcmkocmVjaXBlLmltYWdlRmFsbGJhY2spOwogICAgICByZXR1cm47CiAgICB9CiAgICBzZXRVcmkodW5kZWZpbmVkKTsKICB9OwoKICBjb25zdCBpbWFnZVN0eWxlID0gdmFyaWFudCA9PT0gJ2RldGFpbCcgPyBzdHlsZXMuZGV0YWlsSW1hZ2UgOiBzdHlsZXMucmVjaXBlSW1hZ2U7CiAgY29uc3QgcGxhY2Vob2xkZXJTdHlsZSA9IHZhcmlhbnQgPT09ICdkZXRhaWwnID8gc3R5bGVzLmRldGFpbFBsYWNlaG9sZGVyIDogc3R5bGVzLnJlY2lwZUltYWdlUGxhY2Vob2xkZXI7CiAgY29uc3QgaWNvblNpemUgPSB2YXJpYW50ID09PSAnZGV0YWlsJyA/IDQyIDogMjg7CgogIGlmICghdXJpKSB7CiAgICByZXR1cm4gPFZpZXcgc3R5bGU9e3BsYWNlaG9sZGVyU3R5bGV9PjxNYXRlcmlhbENvbW11bml0eUljb25zIG5hbWU9e3JlY2lwZS5zb3VyY2VLaW5kID09PSAnbWVhbGZsb3cnID8gJ3NpbHZlcndhcmUtZm9yay1rbmlmZScgOiAnY2hlZi1oYXQnfSBzaXplPXtpY29uU2l6ZX0gY29sb3I9e2NvbG9ycy5hY2NlbnR9IC8+PC9WaWV3PjsKICB9CgogIHJldHVybiA8SW1hZ2Ugc291cmNlPXt7IHVyaSB9fSBzdHlsZT17aW1hZ2VTdHlsZX0gcmVzaXplTW9kZT0iY292ZXIiIG9uRXJyb3I9e2hhbmRsZUVycm9yfSBhY2Nlc3NpYmlsaXR5TGFiZWw9e2BCaWxkIHp1ICR7cmVjaXBlLnRpdGxlfWB9IC8+Owp9CgpmdW5jdGlvbiBBdXRoU2NyZWVuKCkiIiIKaWYgYW5jaG9yIG5vdCBpbiB0ZXh0OgogICAgcmFpc2UgU3lzdGVtRXhpdCgiQ291bGQgbm90IGZpbmQgUmVjaXBlQXJ0d29yayBpbnNlcnRpb24gYW5jaG9yIikKdGV4dCA9IHRleHQucmVwbGFjZShhbmNob3IsIGluc2VydCwgMSkKCm9sZF9kZXRhaWwgPSAne3JlY2lwZT8uaW1hZ2UgPyA8SW1hZ2Ugc291cmNlPXt7IHVyaTogcmVjaXBlLmltYWdlIH19IHN0eWxlPXtzdHlsZXMuZGV0YWlsSW1hZ2V9IHJlc2l6ZU1vZGU9ImNvdmVyIiAvPiA6IDxWaWV3IHN0eWxlPXtzdHlsZXMuZGV0YWlsUGxhY2Vob2xkZXJ9PjxNYXRlcmlhbENvbW11bml0eUljb25zIG5hbWU9ImNoZWYtaGF0IiBzaXplPXs0Mn0gY29sb3I9e2NvbG9ycy5hY2NlbnR9IC8+PC9WaWV3Pn0nCm5ld19kZXRhaWwgPSAne3JlY2lwZSA/IDxSZWNpcGVBcnR3b3JrIHJlY2lwZT17cmVjaXBlfSB2YXJpYW50PSJkZXRhaWwiIC8+IDogPFZpZXcgc3R5bGU9e3N0eWxlcy5kZXRhaWxQbGFjZWhvbGRlcn0+PE1hdGVyaWFsQ29tbXVuaXR5SWNvbnMgbmFtZT0iY2hlZi1oYXQiIHNpemU9ezQyfSBjb2xvcj17Y29sb3JzLmFjY2VudH0gLz48L1ZpZXc+fScKaWYgb2xkX2RldGFpbCBub3QgaW4gdGV4dDoKICAgIHJhaXNlIFN5c3RlbUV4aXQoIkNvdWxkIG5vdCBmaW5kIHJlY2lwZSBkZXRhaWwgaW1hZ2UgZXhwcmVzc2lvbiIpCnRleHQgPSB0ZXh0LnJlcGxhY2Uob2xkX2RldGFpbCwgbmV3X2RldGFpbCwgMSkKCm9sZF9jYXJkID0gJ3tyZWNpcGUuaW1hZ2UgPyA8SW1hZ2Ugc291cmNlPXt7IHVyaTogcmVjaXBlLmltYWdlIH19IHN0eWxlPXtzdHlsZXMucmVjaXBlSW1hZ2V9IHJlc2l6ZU1vZGU9ImNvdmVyIiAvPiA6IDxWaWV3IHN0eWxlPXtzdHlsZXMucmVjaXBlSW1hZ2VQbGFjZWhvbGRlcn0+PE1hdGVyaWFsQ29tbXVuaXR5SWNvbnMgbmFtZT17cmVjaXBlLnNvdXJjZUtpbmQgPT09IFwnbWVhbGZsb3dcJyA/IFwnc2lsdmVyd2FyZS1mb3JrLWtuaWZlXCcgOiBcJ2NoZWYtaGF0XCd9IHNpemU9ezI4fSBjb2xvcj17Y29sb3JzLmFjY2VudH0gLz48L1ZpZXc+fScKbmV3X2NhcmQgPSAnPFJlY2lwZUFydHdvcmsgcmVjaXBlPXtyZWNpcGV9IHZhcmlhbnQ9ImNhcmQiIC8+JwppZiBvbGRfY2FyZCBub3QgaW4gdGV4dDoKICAgIHJhaXNlIFN5c3RlbUV4aXQoIkNvdWxkIG5vdCBmaW5kIHJlY2lwZSBjYXJkIGltYWdlIGV4cHJlc3Npb24iKQp0ZXh0ID0gdGV4dC5yZXBsYWNlKG9sZF9jYXJkLCBuZXdfY2FyZCwgMSkKCm9sZF9oaW50ID0gIldlYi1SZXplcHRzdWNoZSArIE1lYWxGbG93IEFUL0RFICsgVGhlTWVhbERCIMK3IGJlaW0gU2Nyb2xsZW4gd2VyZGVuIHdlaXRlcmUgVHJlZmZlciBnZWxhZGVuIgpuZXdfaGludCA9ICJXZWItUmV6ZXB0c3VjaGUgbWl0IE9yaWdpbmFsYmlsZGVybiArIE1lYWxGbG93IEFUL0RFICsgVGhlTWVhbERCIMK3IGJlaW0gU2Nyb2xsZW4gd2VyZGVuIHdlaXRlcmUgVHJlZmZlciBnZWxhZGVuIgppZiBvbGRfaGludCBpbiB0ZXh0OgogICAgdGV4dCA9IHRleHQucmVwbGFjZShvbGRfaGludCwgbmV3X2hpbnQsIDEpCgpwYXRoLndyaXRlX3RleHQodGV4dCkK' | base64 -d > /tmp/patch.py
+          python3 /tmp/patch.py
 
       - name: Install dependencies
         run: npm install --ignore-scripts
