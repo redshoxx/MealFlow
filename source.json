@@ -1,0 +1,36 @@
+{
+  "name": "MealFlow",
+  "subtitle": "Automatische SideStore Updates für MealFlow",
+  "description": "Offizielle MealFlow SideStore Source. Neue Builds werden automatisch über GitHub Releases veröffentlicht.",
+  "iconURL": "https://github.com/redshoxx.png",
+  "website": "https://github.com/redshoxx/MealFlow",
+  "tintColor": "#79C843",
+  "featuredApps": ["at.mealflow.app"],
+  "apps": [
+    {
+      "name": "MealFlow",
+      "bundleIdentifier": "at.mealflow.app",
+      "developerName": "redshoxx",
+      "subtitle": "Wochenplan, Einkaufsliste und Rezepte",
+      "localizedDescription": "MealFlow verbindet deinen Abendessen-Wochenplan, deine Einkaufsliste und Rezeptsuche auf iPhone und Android.",
+      "iconURL": "https://github.com/redshoxx.png",
+      "tintColor": "#79C843",
+      "category": "lifestyle",
+      "versions": [
+        {
+          "version": "1.3.0",
+          "buildVersion": "21",
+          "date": "2026-08-27T10:27:08Z",
+          "localizedDescription": "Automatisches MealFlow Update aus GitHub.",
+          "downloadURL": "https://github.com/redshoxx/MealFlow/releases/download/sidestore-v1.3.0-b21/MealFlow-SideStore.ipa",
+          "size": 7945675
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}
