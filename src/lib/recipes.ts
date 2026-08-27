@@ -7,7 +7,7 @@ export type Recipe = {
   imageFallback?: string;
   imageSource?: 'original' | 'search';
   source?: string;
-  sourceKind: 'mealflow' | 'online' | 'web';
+  sourceKind: 'online' | 'web';
   url?: string;
   minutes?: number;
   instructions?: string;
@@ -51,16 +51,12 @@ const SEARCH_TRANSLATIONS: Record<string, string> = {
   suppe: 'soup',
   salat: 'salad',
   vegetarisch: 'vegetarian',
-  knödel: 'dumplings',
-  eintopf: 'stew',
-  ofengemüse: 'roasted vegetables',
-  kürbis: 'pumpkin',
-  eierschwammerl: 'mushrooms',
-  pilze: 'mushrooms',
   curry: 'curry',
   pasta: 'pasta',
   pizza: 'pizza',
 };
+
+const POPULAR_WEB_QUERY = 'beliebte rezepte einfach schnell familie';
 
 function normalizeText(value: string) {
   return value
@@ -102,49 +98,6 @@ function applyFilters(recipes: Recipe[], filters: RecipeFilters) {
   });
 }
 
-async function searchMealFlowCatalog(query: string): Promise<Recipe[]> {
-  const { data, error } = await supabase
-    .from('recipe_catalog')
-    .select('id,title,description,duration_minutes,vegetarian,ingredients,instructions,tags,seasonal_months,region,source_name')
-    .limit(100);
-  if (error) throw error;
-
-  const month = new Date().getMonth() + 1;
-  const needle = normalizeText(query);
-  return (data ?? [])
-    .map((row: any): Recipe & { seasonal: boolean } => {
-      const ingredients = Array.isArray(row.ingredients) ? row.ingredients.map((name: unknown) => ({ name: String(name) })) : [];
-      const tags = Array.isArray(row.tags) ? row.tags.map(String) : [];
-      const months = Array.isArray(row.seasonal_months) ? row.seasonal_months.map(Number) : [];
-      return {
-        id: `catalog:${row.id}`,
-        title: String(row.title),
-        source: String(row.source_name || 'MealFlow Österreich'),
-        sourceKind: 'mealflow',
-        minutes: Number(row.duration_minutes),
-        instructions: String(row.instructions || ''),
-        description: String(row.description || ''),
-        vegetarian: Boolean(row.vegetarian),
-        region: String(row.region || 'AT/DE'),
-        tags,
-        ingredients,
-        seasonal: months.includes(month),
-      };
-    })
-    .filter((recipe: Recipe & { seasonal: boolean }) => {
-      if (!needle) return recipe.seasonal || recipe.tags?.some((tag) => ['österreich', 'klassisch'].includes(normalizeText(tag)));
-      const haystack = normalizeText([
-        recipe.title,
-        recipe.description,
-        ...(recipe.tags ?? []),
-        ...recipe.ingredients.map((item) => item.name),
-      ].join(' '));
-      return haystack.includes(needle);
-    })
-    .sort((a: Recipe & { seasonal: boolean }, b: Recipe & { seasonal: boolean }) => Number(b.seasonal) - Number(a.seasonal))
-    .map(({ seasonal: _seasonal, ...recipe }: Recipe & { seasonal: boolean }) => recipe);
-}
-
 async function searchTheMealDb(query: string): Promise<Recipe[]> {
   const q = query.trim();
   if (!q) return [];
@@ -178,11 +131,10 @@ async function searchTheMealDb(query: string): Promise<Recipe[]> {
 }
 
 async function searchWeb(query: string, filters: RecipeFilters, page: number): Promise<{ recipes: Recipe[]; hasMore: boolean; configured: boolean }> {
-  if (!query.trim()) return { recipes: [], hasMore: false, configured: true };
-
+  const clean = query.trim() || POPULAR_WEB_QUERY;
   const { data, error } = await supabase.functions.invoke('recipe-web-search', {
     body: {
-      query: query.trim(),
+      query: clean,
       page,
       maxMinutes: filters.maxMinutes ?? null,
       vegetarianOnly: Boolean(filters.vegetarianOnly),
@@ -227,12 +179,12 @@ export async function searchRecipePage(query: string, filters: RecipeFilters = {
   const safePage = Math.max(0, page);
 
   if (!clean) {
-    const catalog = await searchMealFlowCatalog('');
+    const web = await searchWeb(POPULAR_WEB_QUERY, filters, safePage);
     return {
-      recipes: applyFilters(dedupe(catalog), filters),
-      page: 0,
-      hasMore: false,
-      webConfigured: true,
+      recipes: applyFilters(dedupe(web.recipes), filters),
+      page: safePage,
+      hasMore: web.hasMore,
+      webConfigured: web.configured,
     };
   }
 
@@ -246,26 +198,22 @@ export async function searchRecipePage(query: string, filters: RecipeFilters = {
     };
   }
 
-  const [webResult, catalogResult, onlineResult] = await Promise.allSettled([
+  const [webResult, onlineResult] = await Promise.allSettled([
     searchWeb(clean, filters, 0),
-    searchMealFlowCatalog(clean),
     searchTheMealDb(clean),
   ]);
 
   const web = webResult.status === 'fulfilled'
     ? webResult.value
     : { recipes: [] as Recipe[], hasMore: false, configured: false };
-  const catalog = catalogResult.status === 'fulfilled' ? catalogResult.value : [];
   const online = onlineResult.status === 'fulfilled' ? onlineResult.value : [];
 
-  if (!web.recipes.length && !catalog.length && !online.length && catalogResult.status === 'rejected' && onlineResult.status === 'rejected') {
-    throw catalogResult.reason ?? onlineResult.reason;
+  if (!web.recipes.length && !online.length && onlineResult.status === 'rejected') {
+    throw onlineResult.reason;
   }
 
-  const merged = applyFilters(dedupe([...web.recipes, ...catalog, ...online]), filters);
-
   return {
-    recipes: merged,
+    recipes: applyFilters(dedupe([...web.recipes, ...online]), filters),
     page: 0,
     hasMore: web.hasMore,
     webConfigured: web.configured,
@@ -278,20 +226,5 @@ export async function searchRecipes(query: string, filters: RecipeFilters = {}):
 }
 
 export function getSeasonalQuickSearch() {
-  const month = new Date().getMonth() + 1;
-  const seasonal: Record<number, string[]> = {
-    1: ['Eintopf', 'Knödel'],
-    2: ['Eintopf', 'Käsespätzle'],
-    3: ['Bärlauch', 'Ofengemüse'],
-    4: ['Spargel', 'Bärlauch'],
-    5: ['Spargel', 'Gemüselaibchen'],
-    6: ['Zucchini', 'Ofengemüse'],
-    7: ['Eierschwammerl', 'Zucchini'],
-    8: ['Eierschwammerl', 'Ofengemüse'],
-    9: ['Kürbis', 'Knödel'],
-    10: ['Kürbis', 'Eintopf'],
-    11: ['Knödel', 'Eintopf'],
-    12: ['Schnitzel', 'Knödel'],
-  };
-  return Array.from(new Set(['Schnitzel', 'Knödel', 'Eintopf', 'Ofengemüse', ...(seasonal[month] ?? [])])).slice(0, 7);
+  return ['Schnelle Küche', 'Pasta', 'Hähnchen', 'Vegetarisch', 'Auflauf', 'Familienessen', 'Dessert'];
 }
