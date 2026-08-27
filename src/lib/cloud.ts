@@ -38,7 +38,7 @@ export type ShoppingItem = {
   addedByName?: string | null;
 };
 
-export type MealDay = { day: string; meal: string | null };
+export type MealDay = { plannedDate: string; day: string; meal: string | null };
 
 export type OwnRecipe = {
   id: string;
@@ -70,7 +70,7 @@ type ShoppingRow = {
   completed_at?: string | null;
 };
 
-type MealRow = { day: string; meal: string | null };
+type MealRow = { planned_date: string; meal: string | null };
 
 type RecipeRow = {
   id: string;
@@ -300,17 +300,39 @@ export async function deleteShoppingItem(id: string) {
 
 export async function loadMealPlan(): Promise<MealDay[]> {
   const householdId = await getActiveHouseholdId();
-  const { data, error } = await supabase.from('meal_plan').select('day,meal').eq('household_id', householdId);
+  const from = new Date();
+  from.setDate(from.getDate() - 8);
+  const until = new Date();
+  until.setDate(until.getDate() + 22);
+  const toIso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const { data, error } = await supabase
+    .from('meal_plan_entries')
+    .select('planned_date,meal')
+    .eq('household_id', householdId)
+    .gte('planned_date', toIso(from))
+    .lte('planned_date', toIso(until))
+    .order('planned_date', { ascending: true });
   if (error) throw error;
-  return ((data ?? []) as MealRow[]).map((row) => ({ day: String(row.day), meal: row.meal == null ? null : String(row.meal) }));
+  return ((data ?? []) as MealRow[]).map((row) => {
+    const plannedDate = String(row.planned_date);
+    const date = new Date(`${plannedDate}T12:00:00`);
+    const rawDay = date.toLocaleDateString('de-AT', { weekday: 'long' });
+    return { plannedDate, day: rawDay.charAt(0).toUpperCase() + rawDay.slice(1), meal: row.meal == null ? null : String(row.meal) };
+  });
 }
 
-export async function saveMeal(day: string, meal: string | null) {
+export async function saveMeal(plannedDate: string, meal: string | null) {
   const householdId = await getActiveHouseholdId();
   const user = await requireUser();
+  const clean = meal?.trim() || null;
+  if (!clean) {
+    const { error } = await requireCloud().from('meal_plan_entries').delete().eq('household_id', householdId).eq('planned_date', plannedDate);
+    if (error) throw error;
+    return;
+  }
   const { error } = await requireCloud()
-    .from('meal_plan')
-    .upsert({ household_id: householdId, owner_id: user.id, day, meal }, { onConflict: 'household_id,day' });
+    .from('meal_plan_entries')
+    .upsert({ household_id: householdId, owner_id: user.id, planned_date: plannedDate, meal: clean }, { onConflict: 'household_id,planned_date' });
   if (error) throw error;
 }
 

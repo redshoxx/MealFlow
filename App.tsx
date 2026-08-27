@@ -24,7 +24,7 @@ import { Picker } from '@react-native-picker/picker';
 import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   acceptHouseholdInvitation,
   addOwnRecipe,
@@ -54,7 +54,7 @@ import {
 import { getSeasonalQuickSearch, searchRecipePage, searchRecipes, type Recipe, type RecipeFilters } from './src/lib/recipes';
 import { isCloudConfigured, supabase } from './src/lib/supabase';
 import { ActionButton, EmptyState, IconButton, refreshUiComponentStyles, ScreenHeader, SectionTitle, SurfaceCard } from './src/ui/components';
-import { colors, radius, setThemePalette, shadow, spacing, typography } from './src/ui/theme';
+import { colors, getShadow, radius, setThemePalette, spacing, typography } from './src/ui/theme';
 import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';
 import appConfig from './app.json';
 
@@ -104,6 +104,33 @@ function todayIso() {
   return `${year}-${month}-${day}`;
 }
 
+function dateIso(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getWeekDays(weekOffset = 0) {
+  const base = new Date();
+  base.setHours(12, 0, 0, 0);
+  const monday = new Date(base);
+  monday.setDate(base.getDate() - ((base.getDay() + 6) % 7) + (weekOffset * 7));
+  return DAYS.map((day, index) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    const iso = dateIso(date);
+    return {
+      day,
+      date,
+      iso,
+      dayNumber: date.toLocaleDateString('de-AT', { day: '2-digit' }),
+      monthShort: date.toLocaleDateString('de-AT', { month: 'short' }).replace('.', ''),
+      isToday: iso === todayIso(),
+    };
+  });
+}
+
 function normalizeTitle(value: string) {
   return value.toLocaleLowerCase('de-AT').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').trim();
 }
@@ -132,6 +159,28 @@ function useIosSwipeBack(onBack: () => void, enabled = true) {
       if (gesture.dx > 78 && gesture.vx > 0.15) onBack();
     },
   }), [enabled, onBack]);
+}
+
+function useSwipeDownToClose(onClose: () => void, enabled = true) {
+  return useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) => (
+      enabled
+      && gesture.dy > 8
+      && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.3
+    ),
+    onPanResponderRelease: (_event, gesture) => {
+      if (gesture.dy > 54 || gesture.vy > 0.72) onClose();
+    },
+  }), [enabled, onClose]);
+}
+
+function SheetDismissHandle({ onClose }: { onClose: () => void }) {
+  const dismiss = useSwipeDownToClose(onClose);
+  return <View {...dismiss.panHandlers} style={styles.sheetDismissZone}><View style={styles.sheetHandle} /></View>;
+}
+
+function LoadingScreen({ message = 'Dein Haushalt wird vorbereitet …' }: { message?: string }) {
+  return <View style={styles.loadingScreen}><View style={styles.loadingLogo}><MaterialCommunityIcons name="silverware-fork-knife" size={30} color="#FFFFFF" /></View><Text style={styles.loadingBrand}>MealFlow</Text><Text style={styles.loadingMessage}>{message}</Text><View style={styles.loadingProgress}><View style={styles.loadingProgressFill} /></View><Text style={styles.loadingHint}>Plan · Einkauf · Rezepte</Text></View>;
 }
 
 function RecipeArtwork({ recipe, variant }: { recipe: Recipe; variant: 'card' | 'detail' }) {
@@ -377,10 +426,10 @@ function SettingsSheet({
   ];
 
   return (
-    <Modal transparent visible={visible} animationType="slide" presentationStyle="overFullScreen" onRequestClose={onClose}>
+    <Modal transparent visible={visible} animationType="fade" presentationStyle="overFullScreen" onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose} />
       <View style={styles.settingsSheetV214} renderToHardwareTextureAndroid>
-        <View style={styles.sheetHandle} />
+        <SheetDismissHandle onClose={onClose} />
         <View style={styles.sheetHeader}><Text style={styles.sheetTitle}>Einstellungen</Text><IconButton icon="close" onPress={onClose} accessibilityLabel="Schließen" /></View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.settingsScrollContent}>
           <Pressable onPress={onHousehold}><SurfaceCard style={styles.settingsCard}><View style={styles.settingsIcon}><MaterialCommunityIcons name="home-heart" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.settingsLabel}>Haushalt</Text><Text style={styles.settingsValue}>{household.name}</Text><Text style={styles.settingsMeta}>{household.members.length} Mitglieder · Code {household.inviteCode}{pendingInvites ? ` · ${pendingInvites} offene Einladung` : ''}</Text></View><MaterialCommunityIcons name="chevron-right" size={24} color={colors.textTertiary} /></SurfaceCard></Pressable>
@@ -390,6 +439,8 @@ function SettingsSheet({
             <Text style={styles.fieldLabel}>Erscheinungsbild</Text>
             <View style={styles.themeSegmentRow}>{themeOptions.map((option) => { const active = preferences.themeMode === option.key; return <Pressable key={option.key} onPress={() => update({ themeMode: option.key })} style={[styles.themeSegment, active && styles.themeSegmentActive]}><MaterialCommunityIcons name={option.icon} size={19} color={active ? colors.accent : colors.textSecondary} /><Text style={[styles.themeSegmentText, active && styles.themeSegmentTextActive]}>{option.label}</Text></Pressable>; })}</View>
             <Text style={styles.fieldHint}>{preferences.themeMode === 'system' ? `Folgt aktuell dem ${darkMode ? 'dunklen' : 'hellen'} Systemdesign.` : `MealFlow verwendet immer den ${preferences.themeMode === 'dark' ? 'dunklen' : 'hellen'} Modus.`}</Text>
+  <View style={styles.preferenceDivider} />
+  <View style={styles.preferenceRow}><View style={styles.flex1}><View style={styles.cozyTitleRow}><MaterialCommunityIcons name="weather-sunset" size={19} color={colors.accent} /><Text style={styles.fieldLabel}>Cozy Mode</Text></View><Text style={styles.fieldHint}>Wärmere Farben und eine ruhigere, wohnlichere MealFlow-Atmosphäre.</Text></View><Switch value={preferences.cozyMode} onValueChange={(value) => update({ cozyMode: value })} trackColor={{ true: colors.accentSoft }} thumbColor={preferences.cozyMode ? colors.accent : undefined} /></View>
           </SurfaceCard>
 
           <Text style={styles.settingsSectionTitle}>Einkaufsliste</Text>
@@ -419,9 +470,8 @@ function SettingsSheet({
 
 
 function HomeScreen({ household, meals, items, history, onNavigate, onSettings, onCooked }: { household: Household; meals: Record<string, string>; items: ShoppingItem[]; history: MealHistoryEntry[]; onNavigate: (tab: Tab) => void; onSettings: () => void; onCooked: (title: string) => Promise<void> }) {
-  const currentDay = getCurrentDay();
-  const tonight = meals[currentDay] || '';
-  const planned = DAYS.filter((day) => Boolean(meals[day])).length;
+  const tonight = meals[todayIso()] || '';
+  const planned = getWeekDays(1).filter((entry) => Boolean(meals[entry.iso])).length;
   const openItems = items.filter((item) => !item.done).length;
   const cookedToday = tonight ? history.some((entry) => entry.cookedOn === todayIso() && normalizeTitle(entry.recipeTitle) === normalizeTitle(tonight)) : false;
   const dateLabel = new Date().toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' });
@@ -433,7 +483,7 @@ function HomeScreen({ household, meals, items, history, onNavigate, onSettings, 
         <Text style={styles.heroLabel}>HEUTE ABEND</Text><Text style={styles.heroMeal}>{tonight || 'Noch nichts geplant'}</Text><Text style={styles.heroMeta}>{tonight ? cookedToday ? 'Als gekocht markiert – der Haushalt ist auf dem gleichen Stand.' : 'Dein Abendessen ist im gemeinsamen Wochenplan.' : 'Plane jetzt ein Abendessen für den Haushalt.'}</Text>
         <View style={styles.heroActions}><ActionButton label={tonight ? 'Wochenplan öffnen' : 'Abendessen planen'} icon="calendar-week-outline" onPress={() => onNavigate('woche')} variant="secondary" style={styles.flexButton} />{tonight && !cookedToday ? <ActionButton label="Gekocht" icon="check-circle-outline" onPress={() => onCooked(tonight)} style={styles.flexButton} /> : null}</View>
       </SurfaceCard>
-      <View style={styles.metricsRow}><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="calendar-check-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{planned}/7</Text><Text style={styles.metricLabel}>Abende geplant</Text></SurfaceCard><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="cart-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{openItems}</Text><Text style={styles.metricLabel}>offene Einkäufe</Text></SurfaceCard></View>
+      <View style={styles.metricsRow}><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="calendar-check-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{planned}/7</Text><Text style={styles.metricLabel}>nächste Woche geplant</Text></SurfaceCard><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="cart-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{openItems}</Text><Text style={styles.metricLabel}>offene Einkäufe</Text></SurfaceCard></View>
       <SectionTitle title="Schnellzugriff" />
       <View style={styles.quickGrid}><Pressable style={styles.quickAction} onPress={() => onNavigate('woche')}><View style={styles.quickIcon}><MaterialCommunityIcons name="calendar-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Woche planen</Text><Text style={styles.quickText}>Abendessen gemeinsam festlegen.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Einkauf ergänzen</Text><Text style={styles.quickText}>Jeder im Haushalt sieht Änderungen sofort.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('rezepte')}><View style={styles.quickIcon}><MaterialCommunityIcons name="chef-hat" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Rezept finden</Text><Text style={styles.quickText}>Beliebte Web-Rezepte, Filter und Kochverlauf nutzen.</Text></Pressable></View>
     </ScrollView>
@@ -442,51 +492,45 @@ function HomeScreen({ household, meals, items, history, onNavigate, onSettings, 
 
 function PlanScreen({ household, meals, setMeals, onSettings }: { household: Household; meals: Record<string, string>; setMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; onSettings: () => void }) {
   const [editingDay, setEditingDay] = useState<string | null>(null);
+  const [editingDate, setEditingDate] = useState<string | null>(null);
   const [mealText, setMealText] = useState('');
-  const currentDay = getCurrentDay();
-  const plannedCount = DAYS.filter((day) => Boolean(meals[day]?.trim())).length;
+  const weekDays = getWeekDays(1).map((entry) => ({ ...entry, meal: meals[entry.iso]?.trim() ?? '' }));
+  const plannedCount = weekDays.filter((entry) => Boolean(entry.meal)).length;
   const remainingCount = 7 - plannedCount;
-  const today = new Date();
-  today.setHours(12, 0, 0, 0);
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  const weekDays = DAYS.map((day, index) => {
-    const date = new Date(monday);
-    date.setDate(monday.getDate() + index);
-    return { day, date, dayNumber: date.toLocaleDateString('de-AT', { day: '2-digit' }), monthShort: date.toLocaleDateString('de-AT', { month: 'short' }).replace('.', ''), meal: meals[day]?.trim() ?? '', isToday: day === currentDay };
-  });
   const startDate = weekDays[0]!.date;
   const endDate = weekDays[6]!.date;
   const rangeLabel = `${startDate.toLocaleDateString('de-AT', { day: '2-digit', month: 'short' })} – ${endDate.toLocaleDateString('de-AT', { day: '2-digit', month: 'short' })}`;
-  const openEditor = (day: string) => { setEditingDay(day); setMealText(meals[day] ?? ''); Haptics.selectionAsync().catch(() => undefined); };
+  const closeEditor = () => { setEditingDay(null); setEditingDate(null); setMealText(''); };
+  const openEditor = (day: string, plannedDate: string) => { setEditingDay(day); setEditingDate(plannedDate); setMealText(meals[plannedDate] ?? ''); Haptics.selectionAsync().catch(() => undefined); };
   const persist = async () => {
-    if (!editingDay) return;
+    if (!editingDate) return;
     const value = mealText.trim();
-    setMeals((current) => ({ ...current, [editingDay]: value }));
-    try { await saveMeal(editingDay, value || null); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined); }
+    const plannedDate = editingDate;
+    setMeals((current) => ({ ...current, [plannedDate]: value }));
+    closeEditor();
+    try { await saveMeal(plannedDate, value || null); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined); }
     catch (error: any) { Alert.alert('Speichern nicht möglich', germanError(error?.message)); }
-    setEditingDay(null);
   };
   const removePlan = async () => {
-    if (!editingDay) return;
-    const day = editingDay;
-    setMeals((current) => ({ ...current, [day]: '' }));
-    setEditingDay(null); setMealText('');
-    try { await saveMeal(day, null); Haptics.selectionAsync().catch(() => undefined); }
+    if (!editingDate) return;
+    const plannedDate = editingDate;
+    setMeals((current) => ({ ...current, [plannedDate]: '' }));
+    closeEditor();
+    try { await saveMeal(plannedDate, null); Haptics.selectionAsync().catch(() => undefined); }
     catch (error: any) { Alert.alert('Planung konnte nicht entfernt werden', germanError(error?.message)); }
   };
   return <>
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
-      <ScreenHeader eyebrow={`${rangeLabel} · ${household.name}`} title="Wochenplan" subtitle="Sieh auf einen Blick, was ihr an jedem Abend esst und welche Tage noch offen sind." action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
+      <ScreenHeader eyebrow={`${rangeLabel} · ${household.name}`} title="Wochenplan" subtitle="Plane immer die kommende Woche – von Montag bis Sonntag." action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
       <SurfaceCard style={styles.weekOverviewCard}>
-        <View style={styles.weekOverviewTop}><View><Text style={styles.weekOverviewLabel}>DIESE WOCHE</Text><Text style={styles.weekOverviewTitle}>{plannedCount} von 7 Abenden geplant</Text></View><View style={styles.weekOverviewBadge}><MaterialCommunityIcons name={remainingCount === 0 ? 'check-all' : 'calendar-edit'} size={20} color={colors.accent} /><Text style={styles.weekOverviewBadgeText}>{remainingCount === 0 ? 'Fertig' : `${remainingCount} offen`}</Text></View></View>
+        <View style={styles.weekOverviewTop}><View><Text style={styles.weekOverviewLabel}>NÄCHSTE WOCHE</Text><Text style={styles.weekOverviewTitle}>{plannedCount} von 7 Abenden geplant</Text></View><View style={styles.weekOverviewBadge}><MaterialCommunityIcons name={remainingCount === 0 ? 'check-all' : 'calendar-edit'} size={20} color={colors.accent} /><Text style={styles.weekOverviewBadgeText}>{remainingCount === 0 ? 'Fertig' : `${remainingCount} offen`}</Text></View></View>
         <View style={styles.weekProgressTrack}><View style={[styles.weekProgressFill, { width: `${Math.round((plannedCount / 7) * 100)}%` as `${number}%` }]} /></View>
-        <View style={styles.weekStrip}>{weekDays.map((entry) => <Pressable key={entry.day} onPress={() => openEditor(entry.day)} accessibilityLabel={`${entry.day}: ${entry.meal || 'noch kein Abendessen geplant'}`} style={({ pressed }) => [styles.weekStripDay, entry.isToday && styles.weekStripDayToday, { opacity: pressed ? 0.72 : 1 }]}><Text style={[styles.weekStripDow, entry.isToday && styles.weekStripDowToday]}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={[styles.weekStripDate, entry.isToday && styles.weekStripDateToday]}>{entry.dayNumber}</Text><View style={[styles.weekStripDot, entry.meal ? styles.weekStripDotPlanned : styles.weekStripDotOpen]} /></Pressable>)}</View>
+        <View style={styles.weekStrip}>{weekDays.map((entry) => <Pressable key={entry.iso} onPress={() => openEditor(entry.day, entry.iso)} accessibilityLabel={`${entry.day}: ${entry.meal || 'noch kein Abendessen geplant'}`} style={({ pressed }) => [styles.weekStripDay, { opacity: pressed ? 0.72 : 1 }]}><Text style={styles.weekStripDow}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={styles.weekStripDate}>{entry.dayNumber}</Text><View style={[styles.weekStripDot, entry.meal ? styles.weekStripDotPlanned : styles.weekStripDotOpen]} /></Pressable>)}</View>
       </SurfaceCard>
-      <View style={styles.weekSectionHeader}><View><Text style={styles.weekSectionTitle}>Abendessen</Text><Text style={styles.weekSectionHint}>Montag bis Sonntag · gemeinsamer Plan</Text></View><MaterialCommunityIcons name="silverware-fork-knife" size={22} color={colors.accent} /></View>
-      <View style={styles.dayList}>{weekDays.map((entry) => { const selected = Boolean(entry.meal); return <Pressable key={entry.day} onPress={() => openEditor(entry.day)} style={({ pressed }) => [styles.dayCard, entry.isToday && styles.dayCardToday, { opacity: pressed ? 0.76 : 1 }]}><View style={[styles.dayDateBlock, entry.isToday && styles.dayDateBlockToday]}><Text style={[styles.dayDateDow, entry.isToday && styles.dayDateDowToday]}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={[styles.dayDateNumber, entry.isToday && styles.dayDateNumberToday]}>{entry.dayNumber}</Text><Text style={[styles.dayDateMonth, entry.isToday && styles.dayDateMonthToday]}>{entry.monthShort}</Text></View><View style={styles.dayCardContent}><View style={styles.dayTitleRow}><Text style={styles.dayName}>{entry.day}</Text>{entry.isToday ? <Text style={styles.todayPill}>Heute</Text> : null}<Text style={[styles.dayStatusPill, selected ? styles.dayStatusPlanned : styles.dayStatusOpen]}>{selected ? 'Geplant' : 'Noch offen'}</Text></View><Text style={[styles.dayMeal, !selected && styles.dayMealEmpty]} numberOfLines={2}>{entry.meal || 'Noch kein Abendessen geplant'}</Text><Text style={styles.dayMeta}>{selected ? 'Tippen, um das Abendessen zu ändern' : 'Tippen und Abendessen für diesen Tag festlegen'}</Text></View><View style={[styles.dayAction, selected && styles.dayActionPlanned]}><MaterialCommunityIcons name={selected ? 'pencil-outline' : 'plus'} size={21} color={selected ? colors.accent : colors.textSecondary} /></View></Pressable>; })}</View>
+      <View style={styles.weekSectionHeader}><View><Text style={styles.weekSectionTitle}>Abendessen</Text><Text style={styles.weekSectionHint}>Kommende Woche · gemeinsamer Plan</Text></View><MaterialCommunityIcons name="silverware-fork-knife" size={22} color={colors.accent} /></View>
+      <View style={styles.dayList}>{weekDays.map((entry) => { const selected = Boolean(entry.meal); return <Pressable key={entry.iso} onPress={() => openEditor(entry.day, entry.iso)} style={({ pressed }) => [styles.dayCard, { opacity: pressed ? 0.76 : 1 }]}><View style={styles.dayDateBlock}><Text style={styles.dayDateDow}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={styles.dayDateNumber}>{entry.dayNumber}</Text><Text style={styles.dayDateMonth}>{entry.monthShort}</Text></View><View style={styles.dayCardContent}><View style={styles.dayTitleRow}><Text style={styles.dayName}>{entry.day}</Text><Text style={[styles.dayStatusPill, selected ? styles.dayStatusPlanned : styles.dayStatusOpen]}>{selected ? 'Geplant' : 'Noch offen'}</Text></View><Text style={[styles.dayMeal, !selected && styles.dayMealEmpty]} numberOfLines={2}>{entry.meal || 'Noch kein Abendessen geplant'}</Text><Text style={styles.dayMeta}>{selected ? 'Tippen, um das Abendessen zu ändern' : 'Tippen und Abendessen für diesen Tag festlegen'}</Text></View><View style={[styles.dayAction, selected && styles.dayActionPlanned]}><MaterialCommunityIcons name={selected ? 'pencil-outline' : 'plus'} size={21} color={selected ? colors.accent : colors.textSecondary} /></View></Pressable>; })}</View>
     </ScrollView>
-    <Modal transparent visible={Boolean(editingDay)} animationType="slide" onRequestClose={() => setEditingDay(null)}><KeyboardAvoidingView style={styles.modalFlex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><Pressable style={styles.modalOverlay} onPress={() => setEditingDay(null)} /><View style={styles.editorSheet}><View style={styles.sheetHandle} /><Text style={styles.editorEyebrow}>ABENDESSEN PLANEN</Text><Text style={styles.editorTitle}>{editingDay}</Text><Text style={styles.fieldHint}>Was gibt es an diesem Abend für euren Haushalt?</Text><Text style={styles.fieldLabel}>Gericht</Text><TextInput autoFocus value={mealText} onChangeText={setMealText} placeholder="z. B. Ofengemüse mit Feta" placeholderTextColor={colors.textTertiary} style={styles.largeInput} returnKeyType="done" onSubmitEditing={persist} /><ActionButton label={meals[editingDay ?? ''] ? 'Änderung speichern' : 'Abendessen einplanen'} icon="check" onPress={persist} />{meals[editingDay ?? ''] ? <ActionButton label="Aus Wochenplan entfernen" icon="calendar-remove-outline" variant="ghost" onPress={removePlan} /> : null}</View></KeyboardAvoidingView></Modal>
+    <Modal transparent visible={Boolean(editingDay)} animationType="fade" presentationStyle="overFullScreen" onRequestClose={closeEditor}><KeyboardAvoidingView style={styles.modalFlex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><Pressable style={styles.modalOverlay} onPress={closeEditor} /><View style={styles.editorSheet}><SheetDismissHandle onClose={closeEditor} /><Text style={styles.editorEyebrow}>ABENDESSEN PLANEN</Text><Text style={styles.editorTitle}>{editingDay}</Text><Text style={styles.fieldHint}>{editingDate ? new Date(`${editingDate}T12:00:00`).toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' }) : ''}</Text><Text style={styles.fieldLabel}>Gericht</Text><TextInput autoFocus value={mealText} onChangeText={setMealText} placeholder="z. B. Ofengemüse mit Feta" placeholderTextColor={colors.textTertiary} style={styles.largeInput} returnKeyType="done" onSubmitEditing={persist} /><ActionButton label={editingDate && meals[editingDate] ? 'Änderung speichern' : 'Abendessen einplanen'} icon="check" onPress={persist} />{editingDate && meals[editingDate] ? <ActionButton label="Aus Wochenplan entfernen" icon="calendar-remove-outline" variant="ghost" onPress={removePlan} /> : null}</View></KeyboardAvoidingView></Modal>
   </>;
 }
 
@@ -680,11 +724,11 @@ function ShoppingScreen({
       <Text style={styles.swipeHint}>Zum Löschen einen Artikel nach links wischen.</Text>
     </ScrollView>
 
-    <Modal transparent visible={addOpen} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setAddOpen(false)}>
+    <Modal transparent visible={addOpen} animationType="fade" presentationStyle="overFullScreen" onRequestClose={() => setAddOpen(false)}>
       <KeyboardAvoidingView style={styles.modalFlex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Pressable style={styles.modalOverlay} onPress={() => setAddOpen(false)} />
         <View style={styles.shoppingAddSheet} renderToHardwareTextureAndroid>
-          <View style={styles.sheetHandle} />
+          <SheetDismissHandle onClose={() => setAddOpen(false)} />
           <View style={styles.shoppingSheetHeader}><View><Text style={styles.editorEyebrow}>EINKAUF</Text><Text style={styles.editorTitle}>Produkt hinzufügen</Text></View><IconButton icon="close" onPress={() => setAddOpen(false)} accessibilityLabel="Schließen" /></View>
           <View style={styles.voiceInputShell}><MaterialCommunityIcons name="cart-outline" size={21} color={colors.textTertiary} /><TextInput autoFocus value={name} onChangeText={setName} onSubmitEditing={() => add()} returnKeyType="done" placeholder="z. B. Milch" placeholderTextColor={colors.textTertiary} style={styles.voiceProductInput} /><Pressable onPress={recognizing ? () => ExpoSpeechRecognitionModule.stop() : startVoice} style={[styles.micButton, recognizing && styles.micButtonActive]}><MaterialCommunityIcons name={recognizing ? 'stop' : 'microphone-outline'} size={22} color={recognizing ? '#FFFFFF' : colors.accent} /></Pressable></View>
           {recognizing ? <Text style={styles.listeningText}>Ich höre zu … sprich den Produktnamen.</Text> : null}
@@ -757,8 +801,8 @@ function OwnRecipeEditor({ visible, onClose, onSaved }: { visible: boolean; onCl
   const quickIngredients = GROCERY_SUGGESTIONS.filter((entry) => !ingredients.some((item) => normalizeTitle(item) === normalizeTitle(entry))).slice(0, 6);
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={goBack}>
-      <SafeAreaProvider>
+    <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" statusBarTranslucent={false} onRequestClose={goBack}>
+      <SafeAreaView style={styles.fullModal} edges={['top', 'bottom']}>
         <KeyboardAvoidingView style={styles.fullModal} behavior={Platform.OS === 'ios' ? 'padding' : undefined} {...swipeBack.panHandlers}>
           <View style={styles.fullModalHeader}><IconButton icon="arrow-left" onPress={goBack} accessibilityLabel="Zurück" /><View style={styles.recipeWizardHeaderText}><Text style={styles.fullModalTitle}>Unser Rezept</Text><Text style={styles.recipeWizardStep}>Schritt {step + 1} von 3</Text></View><IconButton icon="close" onPress={onClose} accessibilityLabel="Schließen" /></View>
           <View style={styles.recipeWizardProgress}>{[0, 1, 2].map((index) => <View key={index} style={[styles.recipeWizardProgressPart, index <= step && styles.recipeWizardProgressPartActive]} />)}</View>
@@ -784,7 +828,7 @@ function OwnRecipeEditor({ visible, onClose, onSaved }: { visible: boolean; onCl
           </ScrollView>
           <View style={styles.recipeWizardFooter}>{step > 0 ? <ActionButton label="Zurück" variant="secondary" onPress={() => setStep((current) => current - 1)} style={styles.flexButton} /> : null}<ActionButton label={step === 2 ? 'Rezept speichern' : 'Weiter'} icon={step === 2 ? 'content-save-outline' : 'arrow-right'} onPress={step === 2 ? save : next} loading={saving} style={styles.flexButton} /></View>
         </KeyboardAvoidingView>
-      </SafeAreaProvider>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -794,7 +838,7 @@ function OwnRecipeEditor({ visible, onClose, onSaved }: { visible: boolean; onCl
 function RecipeFilterSheet({ visible, filters, onClose, onApply }: { visible: boolean; filters: SearchFilters; onClose: () => void; onApply: (filters: SearchFilters) => void }) {
   const [draft, setDraft] = useState(filters);
   useEffect(() => { if (visible) setDraft(filters); }, [visible, filters]);
-  return <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}><Pressable style={styles.modalOverlay} onPress={onClose} /><View style={styles.filterSheet}><View style={styles.sheetHandle} /><View style={styles.sheetHeader}><Text style={styles.sheetTitle}>Rezeptfilter</Text><Pressable onPress={() => { setDraft(DEFAULT_FILTERS); }}><Text style={styles.sheetDone}>Zurücksetzen</Text></Pressable></View><Text style={styles.fieldLabel}>Maximale Zeit</Text><View style={styles.timeRow}>{[null, 30, 45, 60].map((minutes) => <Pressable key={minutes ?? 'all'} onPress={() => setDraft((current) => ({ ...current, maxMinutes: minutes }))} style={[styles.filterChip, draft.maxMinutes === minutes && styles.filterChipActive]}><Text style={[styles.filterChipText, draft.maxMinutes === minutes && styles.filterChipTextActive]}>{minutes ? `${minutes} Min` : 'Alle'}</Text></Pressable>)}</View><View style={styles.switchRow}><View style={styles.flex1}><Text style={styles.fieldLabel}>Nur vegetarisch</Text><Text style={styles.fieldHint}>Zeigt nur eindeutig vegetarische Rezepte.</Text></View><Switch value={draft.vegetarianOnly} onValueChange={(value) => setDraft((current) => ({ ...current, vegetarianOnly: value }))} trackColor={{ true: colors.accentSoft }} thumbColor={draft.vegetarianOnly ? colors.accent : undefined} /></View><View style={styles.inputGroup}><Text style={styles.fieldLabel}>Zutat, die schon da ist</Text><TextInput value={draft.ingredient} onChangeText={(value) => setDraft((current) => ({ ...current, ingredient: value }))} placeholder="z. B. Kartoffeln oder Zucchini" placeholderTextColor={colors.textTertiary} style={styles.formInput} /></View><View style={styles.switchRow}><View style={styles.flex1}><Text style={styles.fieldLabel}>Nicht wieder diese Woche</Text><Text style={styles.fieldHint}>Gerichte aus dem aktuellen Wochenplan ausblenden.</Text></View><Switch value={draft.excludeThisWeek} onValueChange={(value) => setDraft((current) => ({ ...current, excludeThisWeek: value }))} trackColor={{ true: colors.accentSoft }} thumbColor={draft.excludeThisWeek ? colors.accent : undefined} /></View><ActionButton label="Filter anwenden" icon="tune-variant" onPress={() => { onApply(draft); onClose(); }} /></View></Modal>;
+  return <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalOverlay} onPress={onClose} /><View style={styles.filterSheet}><SheetDismissHandle onClose={onClose} /><View style={styles.sheetHeader}><Text style={styles.sheetTitle}>Rezeptfilter</Text><Pressable onPress={() => { setDraft(DEFAULT_FILTERS); }}><Text style={styles.sheetDone}>Zurücksetzen</Text></Pressable></View><Text style={styles.fieldLabel}>Maximale Zeit</Text><View style={styles.timeRow}>{[null, 30, 45, 60].map((minutes) => <Pressable key={minutes ?? 'all'} onPress={() => setDraft((current) => ({ ...current, maxMinutes: minutes }))} style={[styles.filterChip, draft.maxMinutes === minutes && styles.filterChipActive]}><Text style={[styles.filterChipText, draft.maxMinutes === minutes && styles.filterChipTextActive]}>{minutes ? `${minutes} Min` : 'Alle'}</Text></Pressable>)}</View><View style={styles.switchRow}><View style={styles.flex1}><Text style={styles.fieldLabel}>Nur vegetarisch</Text><Text style={styles.fieldHint}>Zeigt nur eindeutig vegetarische Rezepte.</Text></View><Switch value={draft.vegetarianOnly} onValueChange={(value) => setDraft((current) => ({ ...current, vegetarianOnly: value }))} trackColor={{ true: colors.accentSoft }} thumbColor={draft.vegetarianOnly ? colors.accent : undefined} /></View><View style={styles.inputGroup}><Text style={styles.fieldLabel}>Zutat, die schon da ist</Text><TextInput value={draft.ingredient} onChangeText={(value) => setDraft((current) => ({ ...current, ingredient: value }))} placeholder="z. B. Kartoffeln oder Zucchini" placeholderTextColor={colors.textTertiary} style={styles.formInput} /></View><View style={styles.switchRow}><View style={styles.flex1}><Text style={styles.fieldLabel}>Nicht wieder diese Woche</Text><Text style={styles.fieldHint}>Gerichte aus dem aktuellen Wochenplan ausblenden.</Text></View><Switch value={draft.excludeThisWeek} onValueChange={(value) => setDraft((current) => ({ ...current, excludeThisWeek: value }))} trackColor={{ true: colors.accentSoft }} thumbColor={draft.excludeThisWeek ? colors.accent : undefined} /></View><ActionButton label="Filter anwenden" icon="tune-variant" onPress={() => { onApply(draft); onClose(); }} /></View></Modal>;
 }
 
 function RecipeDetail({ selection, history, onClose, onAddIngredients, onPlan, onDeleteOwn }: { selection: RecipeSelection | null; history: MealHistoryEntry[]; onClose: () => void; onAddIngredients: (selection: RecipeSelection) => void; onPlan: (selection: RecipeSelection) => void; onDeleteOwn: (recipe: OwnRecipe) => void }) {
@@ -803,7 +847,7 @@ function RecipeDetail({ selection, history, onClose, onAddIngredients, onPlan, o
   const recipe = selection.kind === 'recipe' ? selection.recipe : null; const own = selection.kind === 'own' ? selection.recipe : null; const title = recipe?.title ?? own?.title ?? '';
   const ingredients = recipe ? recipe.ingredients.map((item) => `${item.name}${item.amount ? ` · ${item.amount}` : ''}${item.unit ? ` ${item.unit}` : ''}`) : own?.ingredients ?? [];
   const last = history.find((entry) => normalizeTitle(entry.recipeTitle) === normalizeTitle(title));
-  return <Modal visible animationType="slide" onRequestClose={onClose}><SafeAreaProvider><ScrollView {...swipeBack.panHandlers} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.recipeDetailContent}><View style={styles.detailTopbar}><IconButton icon="arrow-left" onPress={onClose} accessibilityLabel="Zurück" />{own ? <IconButton icon="trash-can-outline" tone="danger" onPress={() => onDeleteOwn(own)} accessibilityLabel="Rezept löschen" /> : <View style={styles.headerSpacer} />}</View>{recipe ? <RecipeArtwork recipe={recipe} variant="detail" /> : <View style={styles.detailPlaceholder}><MaterialCommunityIcons name="chef-hat" size={42} color={colors.accent} /></View>}<Text style={styles.detailSource}>{own ? 'UNSER REZEPT' : recipe?.sourceKind === 'web' ? `WEB · ${recipe.source || 'REZEPTQUELLE'}` : 'ONLINE-REZEPT'}</Text><Text style={styles.detailTitle}>{title}</Text><View style={styles.detailBadges}>{recipe?.minutes ? <Text style={styles.metaBadge}>{recipe.minutes} Min</Text> : null}{recipe?.vegetarian ? <Text style={styles.metaBadge}>Vegetarisch</Text> : null}{own ? <Text style={styles.metaBadge}>{own.servings} Portionen</Text> : null}{last ? <Text style={styles.metaBadge}>{lastCookedLabel(last)}</Text> : null}</View>{recipe?.description ? <Text style={styles.detailMeta}>{recipe.description}</Text> : null}{ingredients.length ? <><SectionTitle title="Zutaten" /><SurfaceCard style={styles.ingredientsCard}>{ingredients.map((ingredient, index) => <View key={`${ingredient}-${index}`} style={styles.ingredientRow}><View style={styles.ingredientDot} /><Text style={styles.ingredientText}>{ingredient}</Text></View>)}</SurfaceCard></> : recipe?.sourceKind === 'web' ? <SurfaceCard style={styles.instructionsCard}><Text style={styles.instructionsText}>Dieses Rezept stammt aus der Web-Suche. Öffne die Originalseite für Zutaten, Mengen und die vollständige Zubereitung.</Text></SurfaceCard> : null}{(own?.instructions || recipe?.instructions) ? <><SectionTitle title="Zubereitung" /><SurfaceCard style={styles.instructionsCard}><Text style={styles.instructionsText}>{own?.instructions || recipe?.instructions}</Text></SurfaceCard></> : null}{ingredients.length ? <ActionButton label="Zutaten zur Einkaufsliste" icon="cart-plus" onPress={() => onAddIngredients(selection)} /> : null}<ActionButton label="Als Abendessen einplanen" icon="calendar-plus" variant="secondary" onPress={() => onPlan(selection)} />{recipe?.url ? <ActionButton label={recipe.sourceKind === 'web' ? 'Rezept auf Website ansehen' : 'Originalquelle öffnen'} icon="open-in-new" variant={recipe.sourceKind === 'web' ? 'primary' : 'ghost'} onPress={() => Linking.openURL(recipe.url!).catch(() => undefined)} /> : null}</ScrollView></SafeAreaProvider></Modal>;
+  return <Modal visible animationType="fade" presentationStyle="fullScreen" statusBarTranslucent={false} onRequestClose={onClose}><SafeAreaView style={styles.fullModal} edges={['top', 'bottom']}><ScrollView {...swipeBack.panHandlers} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.recipeDetailContent}><View style={styles.detailTopbar}><IconButton icon="arrow-left" onPress={onClose} accessibilityLabel="Zurück" />{own ? <IconButton icon="trash-can-outline" tone="danger" onPress={() => onDeleteOwn(own)} accessibilityLabel="Rezept löschen" /> : <View style={styles.headerSpacer} />}</View>{recipe ? <RecipeArtwork recipe={recipe} variant="detail" /> : <View style={styles.detailPlaceholder}><MaterialCommunityIcons name="chef-hat" size={42} color={colors.accent} /></View>}<Text style={styles.detailSource}>{own ? 'UNSER REZEPT' : recipe?.sourceKind === 'web' ? `WEB · ${recipe.source || 'REZEPTQUELLE'}` : 'ONLINE-REZEPT'}</Text><Text style={styles.detailTitle}>{title}</Text><View style={styles.detailBadges}>{recipe?.minutes ? <Text style={styles.metaBadge}>{recipe.minutes} Min</Text> : null}{recipe?.vegetarian ? <Text style={styles.metaBadge}>Vegetarisch</Text> : null}{own ? <Text style={styles.metaBadge}>{own.servings} Portionen</Text> : null}{last ? <Text style={styles.metaBadge}>{lastCookedLabel(last)}</Text> : null}</View>{recipe?.description ? <Text style={styles.detailMeta}>{recipe.description}</Text> : null}{ingredients.length ? <><SectionTitle title="Zutaten" /><SurfaceCard style={styles.ingredientsCard}>{ingredients.map((ingredient, index) => <View key={`${ingredient}-${index}`} style={styles.ingredientRow}><View style={styles.ingredientDot} /><Text style={styles.ingredientText}>{ingredient}</Text></View>)}</SurfaceCard></> : recipe?.sourceKind === 'web' ? <SurfaceCard style={styles.instructionsCard}><Text style={styles.instructionsText}>Dieses Rezept stammt aus der Web-Suche. Öffne die Originalseite für Zutaten, Mengen und die vollständige Zubereitung.</Text></SurfaceCard> : null}{(own?.instructions || recipe?.instructions) ? <><SectionTitle title="Zubereitung" /><SurfaceCard style={styles.instructionsCard}><Text style={styles.instructionsText}>{own?.instructions || recipe?.instructions}</Text></SurfaceCard></> : null}{ingredients.length ? <ActionButton label="Zutaten zur Einkaufsliste" icon="cart-plus" onPress={() => onAddIngredients(selection)} /> : null}<ActionButton label="Als Abendessen einplanen" icon="calendar-plus" variant="secondary" onPress={() => onPlan(selection)} />{recipe?.url ? <ActionButton label={recipe.sourceKind === 'web' ? 'Rezept auf Website ansehen' : 'Originalquelle öffnen'} icon="open-in-new" variant={recipe.sourceKind === 'web' ? 'primary' : 'ghost'} onPress={() => Linking.openURL(recipe.url!).catch(() => undefined)} /> : null}</ScrollView></SafeAreaView></Modal>;
 }
 
 function RecipesScreen({ ownRecipes, setOwnRecipes, history, meals, onAddIngredients, onPlan, onSettings }: { ownRecipes: OwnRecipe[]; setOwnRecipes: React.Dispatch<React.SetStateAction<OwnRecipe[]>>; history: MealHistoryEntry[]; meals: Record<string, string>; onAddIngredients: (selection: RecipeSelection) => void; onPlan: (selection: RecipeSelection) => void; onSettings: () => void }) {
@@ -818,9 +862,10 @@ function RecipesScreen({ ownRecipes, setOwnRecipes, history, meals, onAddIngredi
   return <><ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} onScroll={({ nativeEvent }) => { const nearBottom = nativeEvent.layoutMeasurement.height + nativeEvent.contentOffset.y >= nativeEvent.contentSize.height - 320; if (nearBottom) loadMore(); }} scrollEventThrottle={300}><ScreenHeader title="Rezepte" subtitle="Beliebte Rezepte aus dem Internet entdecken, durchsuchen und direkt einplanen." action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} /><View style={styles.recipeSegments}><Pressable onPress={() => setMode('entdecken')} style={[styles.recipeSegment, mode === 'entdecken' && styles.recipeSegmentActive]}><Text style={[styles.recipeSegmentText, mode === 'entdecken' && styles.recipeSegmentTextActive]}>Entdecken</Text></Pressable><Pressable onPress={() => setMode('eigene')} style={[styles.recipeSegment, mode === 'eigene' && styles.recipeSegmentActive]}><Text style={[styles.recipeSegmentText, mode === 'eigene' && styles.recipeSegmentTextActive]}>Unsere Rezepte</Text></Pressable></View>{mode === 'entdecken' ? <><View style={styles.searchRow}><View style={styles.searchShell}><MaterialCommunityIcons name="magnify" size={22} color={colors.textTertiary} /><TextInput value={query} onChangeText={setQuery} onSubmitEditing={() => runSearch()} returnKeyType="search" placeholder="Gericht oder Zutat suchen …" placeholderTextColor={colors.textTertiary} style={styles.searchInput} />{query ? <Pressable onPress={() => setQuery('')}><MaterialCommunityIcons name="close-circle" size={19} color={colors.textTertiary} /></Pressable> : null}</View><Pressable onPress={() => setFilterOpen(true)} style={styles.filterButton}><MaterialCommunityIcons name="tune-variant" size={22} color={colors.accent} />{activeFilterCount ? <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{activeFilterCount}</Text></View> : null}</Pressable></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>{quickSearch.map((term) => <Pressable key={term} onPress={() => runSearch(term)} style={styles.chip}><Text style={styles.chipText}>{term}</Text></Pressable>)}</ScrollView>{loading ? <View style={styles.loadingBox}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Passende Rezepte werden gesucht …</Text></View> : null}<View style={styles.sourceHint}><MaterialCommunityIcons name="web" size={18} color={colors.accent} /><Text style={styles.sourceHintText}>{webConfigured ? 'Beliebte Web-Rezepte mit Originalbildern · beim Scrollen werden weitere Treffer geladen' : 'Web-Rezeptsuche ist noch nicht aktiviert · Online-Fallback bleibt verfügbar'}</Text></View><View style={styles.recipeGrid}>{!loading && recipes.map((recipe) => { const last = history.find((entry) => normalizeTitle(entry.recipeTitle) === normalizeTitle(recipe.title)); return <Pressable key={recipe.id} onPress={() => setSelected({ kind: 'recipe', recipe })} style={({ pressed }) => [styles.recipeCard, { opacity: pressed ? 0.8 : 1 }]}><RecipeArtwork recipe={recipe} variant="card" /><View style={styles.recipeCardBody}><Text style={styles.recipeSource}>{recipe.sourceKind === 'web' ? (recipe.source || 'WEB') : 'ONLINE'}</Text><Text style={styles.recipeCardTitle} numberOfLines={2}>{recipe.title}</Text><Text style={styles.recipeCardMeta} numberOfLines={3}>{recipe.sourceKind === 'web' ? (recipe.description || 'Web-Rezept öffnen und ansehen') : ([recipe.minutes ? `${recipe.minutes} Min` : null, recipe.vegetarian ? 'Vegetarisch' : null, last ? lastCookedLabel(last) : null].filter(Boolean).join(' · ') || `${recipe.ingredients.length} Zutaten`)}</Text></View></Pressable>; })}</View>{loadingMore ? <View style={styles.loadingBox}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Weitere Rezepte werden geladen …</Text></View> : null}{!loading && !loadingMore && hasMore ? <Text style={styles.loadingText}>Weiter scrollen für mehr Treffer</Text> : null}{!loading && !recipes.length ? <SurfaceCard><EmptyState icon="chef-hat" title="Keine Rezepte gefunden" text="Passe Suchbegriff oder Filter an." /></SurfaceCard> : null}</> : <><ActionButton label="Unser Rezept anlegen" icon="plus" onPress={() => setEditorOpen(true)} />{ownRecipes.length === 0 ? <SurfaceCard><EmptyState icon="book-open-page-variant-outline" title="Noch keine gemeinsamen Rezepte" text="Speichert Familienrezepte und Lieblingsgerichte für den ganzen Haushalt." actionLabel="Erstes Rezept anlegen" onAction={() => setEditorOpen(true)} /></SurfaceCard> : <View style={styles.ownRecipeList}>{ownRecipes.map((recipe) => <Pressable key={recipe.id} onPress={() => setSelected({ kind: 'own', recipe })} style={({ pressed }) => [styles.ownRecipeRow, { opacity: pressed ? 0.75 : 1 }]}><View style={styles.ownRecipeIcon}><MaterialCommunityIcons name="book-open-page-variant-outline" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.ownRecipeTitle}>{recipe.title}</Text><Text style={styles.ownRecipeMeta}>{recipe.ingredients.length} Zutaten · {recipe.servings} Portionen</Text></View><MaterialCommunityIcons name="chevron-right" size={24} color={colors.textTertiary} /></Pressable>)}</View>}</>}</ScrollView><RecipeFilterSheet visible={filterOpen} filters={filters} onClose={() => setFilterOpen(false)} onApply={(next) => { setFilters(next); runSearch(query, next); }} /><OwnRecipeEditor visible={editorOpen} onClose={() => setEditorOpen(false)} onSaved={(recipe) => setOwnRecipes((current) => [recipe, ...current])} /><RecipeDetail selection={selected} history={history} onClose={() => setSelected(null)} onAddIngredients={(selection) => { onAddIngredients(selection); setSelected(null); }} onPlan={(selection) => { onPlan(selection); setSelected(null); }} onDeleteOwn={removeOwn} /></>;
 }
 
-function DayPicker({ selection, onClose, onSelect }: { selection: RecipeSelection | null; onClose: () => void; onSelect: (day: string) => void }) {
+function DayPicker({ selection, onClose, onSelect }: { selection: RecipeSelection | null; onClose: () => void; onSelect: (plannedDate: string) => void }) {
   const title = selection?.recipe.title ?? '';
-  return <Modal transparent visible={Boolean(selection)} animationType="slide" onRequestClose={onClose}><Pressable style={styles.modalOverlay} onPress={onClose} /><View style={styles.dayPickerSheet}><View style={styles.sheetHandle} /><Text style={styles.editorEyebrow}>ABENDESSEN EINPLANEN</Text><Text style={styles.dayPickerTitle}>{title}</Text><View style={styles.dayPickerGrid}>{DAYS.map((day) => <Pressable key={day} onPress={() => onSelect(day)} style={styles.dayPickerButton}><Text style={styles.dayPickerButtonText}>{day}</Text></Pressable>)}</View></View></Modal>;
+  const weekDays = getWeekDays(1);
+  return <Modal transparent visible={Boolean(selection)} animationType="fade" presentationStyle="overFullScreen" onRequestClose={onClose}><Pressable style={styles.modalOverlay} onPress={onClose} /><View style={styles.dayPickerSheet}><SheetDismissHandle onClose={onClose} /><Text style={styles.editorEyebrow}>NÄCHSTE WOCHE EINPLANEN</Text><Text style={styles.dayPickerTitle}>{title}</Text><View style={styles.dayPickerGrid}>{weekDays.map((entry) => <Pressable key={entry.iso} onPress={() => onSelect(entry.iso)} style={styles.dayPickerButton}><View><Text style={styles.dayPickerButtonText}>{entry.day}</Text><Text style={styles.dayPickerDate}>{entry.date.toLocaleDateString('de-AT', { day: '2-digit', month: 'long' })}</Text></View><MaterialCommunityIcons name="chevron-right" size={21} color={colors.textTertiary} /></Pressable>)}</View></View></Modal>;
 }
 
 function TabBar({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
@@ -844,65 +889,85 @@ function MainApp() {
   const [recipeToPlan, setRecipeToPlan] = useState<RecipeSelection | null>(null);
   const [preferences, setPreferences] = useState<AppPreferences>(DEFAULT_PREFERENCES);
   const [darkMode, setDarkMode] = useState(false);
+  const loadGeneration = useRef(0);
 
-  const applyAppearance = (mode: ThemeMode) => {
+  const applyAppearance = (mode: ThemeMode, cozy = preferences.cozyMode) => {
     const nextDark = mode === 'dark' || (mode === 'system' && Appearance.getColorScheme() === 'dark');
-    setThemePalette(nextDark ? 'dark' : 'light');
+    setThemePalette(nextDark ? 'dark' : 'light', cozy);
     refreshAppStyles();
     setDarkMode(nextDark);
   };
 
   const updatePreferences = (next: AppPreferences) => {
     setPreferences(next);
-    applyAppearance(next.themeMode);
+    applyAppearance(next.themeMode, next.cozyMode);
     savePreferences(next).catch(() => undefined);
   };
 
-  const reloadAll = async () => {
-    clearHouseholdCache();
-    const nextHousehold = await loadHousehold();
-    const [shopping, plan, customRecipes, cookedHistory, pending, userResult] = await Promise.all([
-      loadShopping(),
-      loadMealPlan(),
-      loadOwnRecipes(),
-      loadMealHistory(),
-      loadPendingHouseholdInvitations(),
-      supabase.auth.getUser(),
-    ]);
-    setHousehold(nextHousehold);
-    setItems(shopping);
-    setMeals(Object.fromEntries(plan.map((entry) => [entry.day, entry.meal ?? ''])));
-    setOwnRecipes(customRecipes);
-    setHistory(cookedHistory);
-    setInvitations(pending);
-    setEmail(userResult.data.user?.email ?? '');
-  };
+  const reloadAll = async (fastStart = false) => {
+  const generation = ++loadGeneration.current;
+  clearHouseholdCache();
+  const nextHousehold = await loadHousehold();
+  if (generation !== loadGeneration.current) return;
+  setHousehold(nextHousehold);
+
+  const [shopping, plan] = await Promise.all([loadShopping(), loadMealPlan()]);
+  if (generation !== loadGeneration.current) return;
+  setItems(shopping);
+  setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
+
+  const secondary = Promise.all([
+    loadOwnRecipes(),
+    loadMealHistory(),
+    loadPendingHouseholdInvitations(),
+    supabase.auth.getUser(),
+  ]);
+
+  if (fastStart) {
+    setReady(true);
+    secondary.then(([customRecipes, cookedHistory, pending, userResult]) => {
+      if (generation !== loadGeneration.current) return;
+      setOwnRecipes(customRecipes);
+      setHistory(cookedHistory);
+      setInvitations(pending);
+      setEmail(userResult.data.user?.email ?? '');
+    }).catch(() => undefined);
+    return;
+  }
+
+  const [customRecipes, cookedHistory, pending, userResult] = await secondary;
+  if (generation !== loadGeneration.current) return;
+  setOwnRecipes(customRecipes);
+  setHistory(cookedHistory);
+  setInvitations(pending);
+  setEmail(userResult.data.user?.email ?? '');
+};
 
   useEffect(() => {
     loadPreferences().then((loaded) => {
       setPreferences(loaded);
       setTab(loaded.startTab);
-      applyAppearance(loaded.themeMode);
+      applyAppearance(loaded.themeMode, loaded.cozyMode);
     }).catch(() => undefined);
-    reloadAll().catch((error) => Alert.alert('Daten konnten nicht geladen werden', germanError(error?.message))).finally(() => setReady(true));
+    reloadAll(true).catch((error) => { setReady(true); Alert.alert('Daten konnten nicht geladen werden', germanError(error?.message)); });
   }, []);
 
   useEffect(() => {
     if (preferences.themeMode !== 'system') return;
     const subscription = Appearance.addChangeListener(({ colorScheme }) => {
-      setThemePalette(colorScheme === 'dark' ? 'dark' : 'light');
+      setThemePalette(colorScheme === 'dark' ? 'dark' : 'light', preferences.cozyMode);
       refreshAppStyles();
       setDarkMode(colorScheme === 'dark');
     });
     return () => subscription.remove();
-  }, [preferences.themeMode]);
+  }, [preferences.themeMode, preferences.cozyMode]);
 
   useEffect(() => {
     if (!household?.id) return;
     const filter = `household_id=eq.${household.id}`;
     const channel = supabase.channel(`mealflow-household-${household.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => loadShopping().then(setItems).catch(() => undefined))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan', filter }, () => loadMealPlan().then((plan) => setMeals(Object.fromEntries(plan.map((entry) => [entry.day, entry.meal ?? ''])))).catch(() => undefined))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => loadMealPlan().then((plan) => setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])))).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter }, () => loadOwnRecipes().then(setOwnRecipes).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_history', filter }, () => loadMealHistory().then(setHistory).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'household_members', filter }, () => loadHousehold().then(setHousehold).catch(() => undefined))
@@ -926,13 +991,13 @@ function MainApp() {
     if (preferences.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
   };
 
-  const planRecipe = async (day: string) => {
+  const planRecipe = async (plannedDate: string) => {
     if (!recipeToPlan) return;
     const title = recipeToPlan.recipe.title;
-    setMeals((current) => ({ ...current, [day]: title }));
+    setMeals((current) => ({ ...current, [plannedDate]: title }));
     setRecipeToPlan(null);
     changeTab('woche');
-    try { await saveMeal(day, title); }
+    try { await saveMeal(plannedDate, title); }
     catch (error: any) { Alert.alert('Planung nicht gespeichert', germanError(error?.message)); }
   };
 
@@ -946,7 +1011,7 @@ function MainApp() {
     }
   };
 
-  if (!ready || !household) return <View style={styles.loadingScreen}><View style={styles.brandMark}><MaterialCommunityIcons name="silverware-fork-knife" size={28} color="#FFFFFF" /></View><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Euer Haushalt wird synchronisiert …</Text></View>;
+  if (!ready || !household) return <LoadingScreen message="Dein Haushalt wird vorbereitet …" />;
 
   return (
     <View style={[styles.appRoot, { paddingTop: insets.top }]}>
@@ -970,7 +1035,7 @@ function MainApp() {
 function Root() {
   const [authenticated, setAuthenticated] = useState(false); const [checking, setChecking] = useState(true);
   useEffect(() => { if (!isCloudConfigured) { setChecking(false); return; } supabase.auth.getSession().then(({ data }) => { setAuthenticated(Boolean(data.session)); setChecking(false); }); const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { if (!session) clearHouseholdCache(); setAuthenticated(Boolean(session)); }); return () => listener.subscription.unsubscribe(); }, []);
-  if (checking) return <View style={styles.loadingScreen}><ActivityIndicator color={colors.accent} /></View>;
+  if (checking) return <LoadingScreen message="Anmeldung wird geprüft …" />;
   if (!isCloudConfigured) return <View style={styles.loadingScreen}><Text style={styles.configurationTitle}>Cloud-Verbindung fehlt</Text><Text style={styles.configurationText}>MealFlow benötigt die Supabase-Konfiguration, damit dein Haushalt sicher synchronisiert werden kann.</Text></View>;
   return authenticated ? <MainApp /> : <AuthScreen />;
 }
@@ -980,18 +1045,18 @@ export default function App() { return <SafeAreaProvider><Root /></SafeAreaProvi
 function createStyles() {
   return StyleSheet.create({
   appRoot: { flex: 1, backgroundColor: colors.background }, screenArea: { flex: 1 }, screenContent: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, gap: 18 }, flex1: { flex: 1 }, flexButton: { flex: 1 }, modalFlex: { flex: 1, justifyContent: 'flex-end' }, fullModal: { flex: 1, backgroundColor: colors.background }, headerSpacer: { width: 44, height: 44 },
-  authRoot: { flex: 1, backgroundColor: colors.background }, authContent: { flexGrow: 1, justifyContent: 'center', padding: 24, gap: 12 }, brandMark: { width: 58, height: 58, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', ...shadow }, authBrand: { ...typography.title, color: colors.accent, marginTop: 6 }, authHero: { ...typography.hero, color: colors.text, maxWidth: 380 }, authSubtitle: { ...typography.body, color: colors.textSecondary, maxWidth: 370, marginBottom: 12 }, authCard: { padding: 18, gap: 16 }, segmentedControl: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: 4 }, segmentButton: { flex: 1, minHeight: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, segmentButtonActive: { backgroundColor: colors.surface, ...shadow }, segmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, segmentTextActive: { color: colors.text }, inputGroup: { gap: 7 }, inputLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, inputShell: { minHeight: 52, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.md }, textInput: { flex: 1, ...typography.body, color: colors.text, paddingVertical: 12 }, authHint: { ...typography.caption, color: colors.textTertiary, textAlign: 'center' },
-  heroCard: { padding: 20, gap: 10 }, heroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, heroLabel: { ...typography.label, color: colors.accent, marginTop: 4 }, heroMeal: { ...typography.h2, color: colors.text }, heroMeta: { ...typography.body, color: colors.textSecondary, marginBottom: 4 }, heroActions: { flexDirection: 'row', gap: 10 }, metricsRow: { flexDirection: 'row', gap: 12 }, metricCard: { flex: 1, padding: 16, gap: 7 }, metricNumber: { fontSize: 26, lineHeight: 31, fontWeight: '800', color: colors.text }, metricLabel: { ...typography.caption, color: colors.textSecondary }, quickGrid: { gap: 10 }, quickAction: { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, ...shadow }, quickIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, quickTitle: { ...typography.bodyStrong, color: colors.text, minWidth: 95 }, quickText: { ...typography.caption, color: colors.textSecondary, flex: 1 },
+  authRoot: { flex: 1, backgroundColor: colors.background }, authContent: { flexGrow: 1, justifyContent: 'center', padding: 24, gap: 12 }, brandMark: { width: 58, height: 58, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', ...getShadow() }, authBrand: { ...typography.title, color: colors.accent, marginTop: 6 }, authHero: { ...typography.hero, color: colors.text, maxWidth: 380 }, authSubtitle: { ...typography.body, color: colors.textSecondary, maxWidth: 370, marginBottom: 12 }, authCard: { padding: 18, gap: 16 }, segmentedControl: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: 4 }, segmentButton: { flex: 1, minHeight: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, segmentButtonActive: { backgroundColor: colors.surface, ...getShadow() }, segmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, segmentTextActive: { color: colors.text }, inputGroup: { gap: 7 }, inputLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, inputShell: { minHeight: 52, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.md }, textInput: { flex: 1, ...typography.body, color: colors.text, paddingVertical: 12 }, authHint: { ...typography.caption, color: colors.textTertiary, textAlign: 'center' },
+  heroCard: { padding: 20, gap: 10 }, heroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, heroLabel: { ...typography.label, color: colors.accent, marginTop: 4 }, heroMeal: { ...typography.h2, color: colors.text }, heroMeta: { ...typography.body, color: colors.textSecondary, marginBottom: 4 }, heroActions: { flexDirection: 'row', gap: 10 }, metricsRow: { flexDirection: 'row', gap: 12 }, metricCard: { flex: 1, padding: 16, gap: 7 }, metricNumber: { fontSize: 26, lineHeight: 31, fontWeight: '800', color: colors.text }, metricLabel: { ...typography.caption, color: colors.textSecondary }, quickGrid: { gap: 10 }, quickAction: { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, ...getShadow() }, quickIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, quickTitle: { ...typography.bodyStrong, color: colors.text, minWidth: 95 }, quickText: { ...typography.caption, color: colors.textSecondary, flex: 1 },
   weekOverviewCard: { padding: 18, gap: 14 }, weekOverviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, weekOverviewLabel: { ...typography.label, color: colors.accent }, weekOverviewTitle: { ...typography.title, color: colors.text, marginTop: 3 }, weekOverviewBadge: { minHeight: 38, paddingHorizontal: 11, borderRadius: radius.pill, backgroundColor: colors.accentSoft, flexDirection: 'row', alignItems: 'center', gap: 6 }, weekOverviewBadgeText: { ...typography.caption, color: colors.accent, fontWeight: '800' }, weekProgressTrack: { height: 8, borderRadius: 5, backgroundColor: colors.surfaceMuted, overflow: 'hidden' }, weekProgressFill: { height: '100%', borderRadius: 5, backgroundColor: colors.accent }, weekStrip: { flexDirection: 'row', gap: 5 }, weekStripDay: { flex: 1, minHeight: 68, borderRadius: 15, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', gap: 3, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent' }, weekStripDayToday: { backgroundColor: colors.accentSoft, borderColor: '#AFC8B6' }, weekStripDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, weekStripDowToday: { color: colors.accent }, weekStripDate: { fontSize: 17, lineHeight: 20, fontWeight: '800', color: colors.text }, weekStripDateToday: { color: colors.accent }, weekStripDot: { width: 6, height: 6, borderRadius: 3 }, weekStripDotPlanned: { backgroundColor: colors.accent }, weekStripDotOpen: { backgroundColor: colors.border }, weekSectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2 }, weekSectionTitle: { ...typography.title, color: colors.text }, weekSectionHint: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  dayList: { gap: 12 }, dayCard: { minHeight: 112, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, ...shadow }, dayCardToday: { borderColor: '#AFC8B6', backgroundColor: colors.surface }, dayDateBlock: { width: 58, height: 76, borderRadius: 18, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayDateBlockToday: { backgroundColor: colors.accent }, dayDateDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, dayDateDowToday: { color: '#DCEADF' }, dayDateNumber: { fontSize: 24, lineHeight: 28, fontWeight: '800', color: colors.text }, dayDateNumberToday: { color: '#FFFFFF' }, dayDateMonth: { fontSize: 10, lineHeight: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }, dayDateMonthToday: { color: '#DCEADF' }, dayCardContent: { flex: 1, gap: 5 }, dayTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }, dayName: { ...typography.caption, color: colors.textSecondary, fontWeight: '800' }, todayPill: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, overflow: 'hidden', fontWeight: '800' }, dayStatusPill: { fontSize: 10, lineHeight: 12, fontWeight: '800', paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.pill, overflow: 'hidden' }, dayStatusPlanned: { color: colors.accent, backgroundColor: colors.accentSoft }, dayStatusOpen: { color: colors.textTertiary, backgroundColor: colors.surfaceMuted }, dayMeal: { fontSize: 19, lineHeight: 24, fontWeight: '800', color: colors.text }, dayMealEmpty: { color: colors.textTertiary, fontWeight: '700' }, dayMeta: { ...typography.caption, color: colors.textSecondary }, dayAction: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayActionPlanned: { backgroundColor: colors.accentSoft },
-  modalOverlay: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay }, bottomSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 26, position: 'absolute', left: 0, right: 0, bottom: 0 }, settingsSheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 12 }, editorSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, gap: 12 }, dayPickerSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 12 }, filterSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 16 }, sheetHandle: { width: 38, height: 5, borderRadius: 3, backgroundColor: colors.border, alignSelf: 'center', marginVertical: 10 }, sheetHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, sheetCancel: { ...typography.body, color: colors.textSecondary }, sheetTitle: { ...typography.title, color: colors.text }, sheetDone: { ...typography.bodyStrong, color: colors.accent }, pickerRow: { flexDirection: 'row', minHeight: 210 }, picker: { flex: 1 }, pickerItem: { color: colors.text, fontSize: 19 },
+  dayList: { gap: 12 }, dayCard: { minHeight: 112, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, ...getShadow() }, dayCardToday: { borderColor: '#AFC8B6', backgroundColor: colors.surface }, dayDateBlock: { width: 58, height: 76, borderRadius: 18, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayDateBlockToday: { backgroundColor: colors.accent }, dayDateDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, dayDateDowToday: { color: '#DCEADF' }, dayDateNumber: { fontSize: 24, lineHeight: 28, fontWeight: '800', color: colors.text }, dayDateNumberToday: { color: '#FFFFFF' }, dayDateMonth: { fontSize: 10, lineHeight: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }, dayDateMonthToday: { color: '#DCEADF' }, dayCardContent: { flex: 1, gap: 5 }, dayTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }, dayName: { ...typography.caption, color: colors.textSecondary, fontWeight: '800' }, todayPill: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, overflow: 'hidden', fontWeight: '800' }, dayStatusPill: { fontSize: 10, lineHeight: 12, fontWeight: '800', paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.pill, overflow: 'hidden' }, dayStatusPlanned: { color: colors.accent, backgroundColor: colors.accentSoft }, dayStatusOpen: { color: colors.textTertiary, backgroundColor: colors.surfaceMuted }, dayMeal: { fontSize: 19, lineHeight: 24, fontWeight: '800', color: colors.text }, dayMealEmpty: { color: colors.textTertiary, fontWeight: '700' }, dayMeta: { ...typography.caption, color: colors.textSecondary }, dayAction: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayActionPlanned: { backgroundColor: colors.accentSoft },
+  modalOverlay: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay }, bottomSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 26, position: 'absolute', left: 0, right: 0, bottom: 0 }, settingsSheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 12 }, editorSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, gap: 12 }, dayPickerSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 12 }, filterSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 16 }, sheetDismissZone: { minHeight: 28, alignItems: 'center', justifyContent: 'center', marginTop: 1 }, sheetHandle: { width: 38, height: 5, borderRadius: 3, backgroundColor: colors.border, alignSelf: 'center' }, sheetHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, sheetCancel: { ...typography.body, color: colors.textSecondary }, sheetTitle: { ...typography.title, color: colors.text }, sheetDone: { ...typography.bodyStrong, color: colors.accent }, pickerRow: { flexDirection: 'row', minHeight: 210 }, picker: { flex: 1 }, pickerItem: { color: colors.text, fontSize: 19 },
   settingsCard: { padding: 15, flexDirection: 'row', alignItems: 'center', gap: 12 }, settingsIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, settingsLabel: { ...typography.caption, color: colors.textSecondary }, settingsValue: { ...typography.bodyStrong, color: colors.text, marginTop: 2 }, settingsMeta: { ...typography.caption, color: colors.textTertiary, marginTop: 4 }, editorEyebrow: { ...typography.label, color: colors.accent }, editorTitle: { ...typography.h2, color: colors.text, marginBottom: 2 }, fieldLabel: { ...typography.bodyStrong, color: colors.text }, fieldHint: { ...typography.caption, color: colors.textSecondary }, largeInput: { minHeight: 54, borderRadius: radius.md, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 14, ...typography.body, color: colors.text },
   householdHero: { padding: 18, flexDirection: 'row', gap: 14, alignItems: 'center' }, householdIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, householdHeroLabel: { ...typography.label, color: colors.accent }, householdHeroTitle: { ...typography.h2, color: colors.text, marginTop: 2 }, householdHeroMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 4 }, memberRow: { minHeight: 66, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, avatar: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, avatarText: { ...typography.bodyStrong, color: colors.accent }, memberName: { ...typography.bodyStrong, color: colors.text }, memberMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 }, inviteCodeCard: { padding: 18, gap: 10 }, inviteCode: { fontSize: 30, letterSpacing: 4, fontWeight: '800', color: colors.text }, inviteCard: { padding: 14, flexDirection: 'row', gap: 10, alignItems: 'center' }, smallAction: { minWidth: 102 }, settingsBlock: { padding: 16, gap: 13 }, codeInput: { letterSpacing: 2, fontWeight: '700' },
   addCard: { padding: 15, gap: 10 }, productInput: { minHeight: 52, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 14, ...typography.body, color: colors.text }, addRow: { flexDirection: 'row', gap: 10 }, amountButton: { flex: 1, minHeight: 52, paddingHorizontal: 13, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, miniLabel: { ...typography.label, color: colors.textTertiary }, amountText: { ...typography.bodyStrong, color: colors.text }, addButton: { flex: 1 }, listCard: { overflow: 'hidden' }, shoppingRow: { minHeight: 70, paddingHorizontal: 14, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, checkbox: { width: 28, height: 28, borderRadius: 10, borderWidth: 1.5, borderColor: '#A7AFA5', alignItems: 'center', justifyContent: 'center' }, checkboxDone: { backgroundColor: colors.accent, borderColor: colors.accent }, shoppingName: { ...typography.bodyStrong, color: colors.text }, shoppingNameDone: { color: colors.textTertiary, textDecorationLine: 'line-through' }, shoppingMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  recipeSegments: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, padding: 4, borderRadius: radius.md }, recipeSegment: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }, recipeSegmentActive: { backgroundColor: colors.surface, ...shadow }, recipeSegmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, recipeSegmentTextActive: { color: colors.text }, searchRow: { flexDirection: 'row', gap: 9 }, searchShell: { flex: 1, minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, searchInput: { flex: 1, ...typography.body, color: colors.text }, filterButton: { width: 54, height: 54, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, filterBadge: { position: 'absolute', right: 5, top: 5, minWidth: 17, height: 17, borderRadius: 9, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }, filterBadgeText: { fontSize: 10, color: '#FFFFFF', fontWeight: '800' }, chipsRow: { gap: 8, paddingRight: 12 }, chip: { paddingHorizontal: 13, paddingVertical: 9, backgroundColor: colors.accentSoft, borderRadius: radius.pill }, chipText: { ...typography.caption, color: colors.accent, fontWeight: '700' }, sourceHint: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 4 }, sourceHintText: { ...typography.caption, color: colors.textSecondary, flex: 1 }, loadingBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, gap: 10 }, loadingText: { ...typography.caption, color: colors.textSecondary }, recipeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, recipeCard: { width: '48.5%', backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, ...shadow }, recipeImage: { width: '100%', height: 130, backgroundColor: colors.surfaceMuted }, recipeImagePlaceholder: { width: '100%', height: 130, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, recipeCardBody: { padding: 12, gap: 4 }, recipeSource: { ...typography.label, color: colors.accent }, recipeCardTitle: { ...typography.bodyStrong, color: colors.text }, recipeCardMeta: { ...typography.caption, color: colors.textSecondary }, ownRecipeList: { gap: 9 }, ownRecipeRow: { minHeight: 72, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg }, ownRecipeIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, ownRecipeTitle: { ...typography.bodyStrong, color: colors.text }, ownRecipeMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  recipeSegments: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, padding: 4, borderRadius: radius.md }, recipeSegment: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }, recipeSegmentActive: { backgroundColor: colors.surface, ...getShadow() }, recipeSegmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, recipeSegmentTextActive: { color: colors.text }, searchRow: { flexDirection: 'row', gap: 9 }, searchShell: { flex: 1, minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, searchInput: { flex: 1, ...typography.body, color: colors.text }, filterButton: { width: 54, height: 54, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, filterBadge: { position: 'absolute', right: 5, top: 5, minWidth: 17, height: 17, borderRadius: 9, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }, filterBadgeText: { fontSize: 10, color: '#FFFFFF', fontWeight: '800' }, chipsRow: { gap: 8, paddingRight: 12 }, chip: { paddingHorizontal: 13, paddingVertical: 9, backgroundColor: colors.accentSoft, borderRadius: radius.pill }, chipText: { ...typography.caption, color: colors.accent, fontWeight: '700' }, sourceHint: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 4 }, sourceHintText: { ...typography.caption, color: colors.textSecondary, flex: 1 }, loadingBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, gap: 10 }, loadingText: { ...typography.caption, color: colors.textSecondary }, recipeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, recipeCard: { width: '48.5%', backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, ...getShadow() }, recipeImage: { width: '100%', height: 130, backgroundColor: colors.surfaceMuted }, recipeImagePlaceholder: { width: '100%', height: 130, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, recipeCardBody: { padding: 12, gap: 4 }, recipeSource: { ...typography.label, color: colors.accent }, recipeCardTitle: { ...typography.bodyStrong, color: colors.text }, recipeCardMeta: { ...typography.caption, color: colors.textSecondary }, ownRecipeList: { gap: 9 }, ownRecipeRow: { minHeight: 72, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg }, ownRecipeIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, ownRecipeTitle: { ...typography.bodyStrong, color: colors.text }, ownRecipeMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   timeRow: { flexDirection: 'row', gap: 8 }, filterChip: { flex: 1, minHeight: 42, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, filterChipActive: { backgroundColor: colors.accent }, filterChipText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, filterChipTextActive: { color: '#FFFFFF' }, switchRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  fullModalHeader: { paddingHorizontal: 18, paddingTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fullModalTitle: { ...typography.title, color: colors.text }, formContent: { padding: 18, paddingBottom: 40, gap: 18 }, formInput: { minHeight: 52, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, ...typography.body, color: colors.text }, multilineInput: { minHeight: 130 }, servingsInput: { maxWidth: 110 }, recipeDetailContent: { minHeight: '100%', backgroundColor: colors.background, padding: 18, paddingBottom: 44, gap: 16 }, detailTopbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, detailImage: { width: '100%', height: 250, borderRadius: radius.xl, backgroundColor: colors.surfaceMuted }, detailPlaceholder: { width: '100%', height: 190, borderRadius: radius.xl, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, detailSource: { ...typography.label, color: colors.accent }, detailTitle: { ...typography.h1, color: colors.text }, detailMeta: { ...typography.body, color: colors.textSecondary }, detailBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, metaBadge: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 9, paddingVertical: 5, borderRadius: radius.pill, overflow: 'hidden' }, ingredientsCard: { padding: 15, gap: 12 }, ingredientRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 }, ingredientDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.accent, marginTop: 8 }, ingredientText: { ...typography.body, color: colors.text, flex: 1 }, instructionsCard: { padding: 16 }, instructionsText: { ...typography.body, color: colors.textSecondary }, dayPickerTitle: { ...typography.h2, color: colors.text, marginBottom: 4 }, dayPickerGrid: { gap: 8 }, dayPickerButton: { minHeight: 48, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, justifyContent: 'center', paddingHorizontal: 15 }, dayPickerButtonText: { ...typography.bodyStrong, color: colors.text },
-  tabBar: { height: 64, flexDirection: 'row', backgroundColor: colors.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingHorizontal: 6 }, tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 }, tabLabel: { fontSize: 11, lineHeight: 14, fontWeight: '600', color: colors.textTertiary }, tabLabelActive: { color: colors.accent }, loadingScreen: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 }, configurationTitle: { ...typography.h2, color: colors.text, textAlign: 'center' }, configurationText: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
+  fullModalHeader: { paddingHorizontal: 18, paddingTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fullModalTitle: { ...typography.title, color: colors.text }, formContent: { padding: 18, paddingBottom: 40, gap: 18 }, formInput: { minHeight: 52, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, ...typography.body, color: colors.text }, multilineInput: { minHeight: 130 }, servingsInput: { maxWidth: 110 }, recipeDetailContent: { minHeight: '100%', backgroundColor: colors.background, padding: 18, paddingBottom: 44, gap: 16 }, detailTopbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, detailImage: { width: '100%', height: 250, borderRadius: radius.xl, backgroundColor: colors.surfaceMuted }, detailPlaceholder: { width: '100%', height: 190, borderRadius: radius.xl, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, detailSource: { ...typography.label, color: colors.accent }, detailTitle: { ...typography.h1, color: colors.text }, detailMeta: { ...typography.body, color: colors.textSecondary }, detailBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, metaBadge: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 9, paddingVertical: 5, borderRadius: radius.pill, overflow: 'hidden' }, ingredientsCard: { padding: 15, gap: 12 }, ingredientRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 }, ingredientDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.accent, marginTop: 8 }, ingredientText: { ...typography.body, color: colors.text, flex: 1 }, instructionsCard: { padding: 16 }, instructionsText: { ...typography.body, color: colors.textSecondary }, dayPickerTitle: { ...typography.h2, color: colors.text, marginBottom: 4 }, dayPickerGrid: { gap: 8 }, dayPickerButton: { minHeight: 58, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, justifyContent: 'space-between', alignItems: 'center', flexDirection: 'row', paddingHorizontal: 15 }, dayPickerButtonText: { ...typography.bodyStrong, color: colors.text }, dayPickerDate: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  tabBar: { height: 64, flexDirection: 'row', backgroundColor: colors.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingHorizontal: 6 }, tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 }, tabLabel: { fontSize: 11, lineHeight: 14, fontWeight: '600', color: colors.textTertiary }, tabLabelActive: { color: colors.accent }, loadingScreen: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34, gap: 10 }, loadingLogo: { width: 68, height: 68, borderRadius: 23, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 5 }, loadingBrand: { ...typography.h2, color: colors.text }, loadingMessage: { ...typography.body, color: colors.textSecondary, textAlign: 'center' }, loadingProgress: { width: 156, height: 5, borderRadius: 3, overflow: 'hidden', backgroundColor: colors.surfaceMuted, marginTop: 8 }, loadingProgressFill: { width: '68%', height: '100%', borderRadius: 3, backgroundColor: colors.accent }, loadingHint: { ...typography.caption, color: colors.textTertiary, marginTop: 2 },
 
   settingsSheetV214: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 18, position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '90%', gap: 10, overflow: 'hidden' },
   settingsScrollContent: { gap: 12, paddingBottom: 18 },
@@ -1001,7 +1066,7 @@ function createStyles() {
   themeSegmentActive: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   themeSegmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
   themeSegmentTextActive: { color: colors.accent },
-  preferenceRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  preferenceRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12 }, cozyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   preferenceDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
   startTabRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   startTabChip: { minHeight: 38, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
@@ -1043,6 +1108,9 @@ function createStyles() {
   undoBar: { position: 'absolute', left: 16, right: 16, bottom: 14, minHeight: 52, paddingHorizontal: 16, borderRadius: radius.md, backgroundColor: colors.text, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   undoText: { ...typography.caption, color: colors.background, flex: 1 },
   undoAction: { ...typography.bodyStrong, color: colors.accentStrong },
+
+  configurationTitle: { ...typography.title, color: colors.text, textAlign: 'center' },
+  configurationText: { ...typography.body, color: colors.textSecondary, textAlign: 'center', maxWidth: 340 },
 
   recipeWizardHeaderText: { flex: 1, alignItems: 'center' },
   recipeWizardStep: { ...typography.caption, color: colors.textTertiary },

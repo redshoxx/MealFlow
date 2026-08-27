@@ -1,5 +1,16 @@
 # MealFlow Changelog
 
+## 2.1.5
+
+- Wochenplan auf die kommende Woche umgestellt und datumsbasiert gespeichert, damit Wochen nicht mehr kollidieren.
+- Bottom-Sheets leichter und flüssiger dargestellt; dunkler Schatten deutlich reduziert.
+- Bottom-Sheets können über den Griff nach unten geschlossen werden.
+- Rezept-Editor und Rezeptdetails respektieren die iPhone-Safe-Area vollständig.
+- Schnellerer Start: Haushalt, Einkauf und Plan werden zuerst geladen; sekundäre Daten folgen danach.
+- Schutz gegen veraltete parallele Ladevorgänge beim Haushaltswechsel.
+- Cozy Mode als persönliche Designoption für warme Farben im hellen und dunklen Erscheinungsbild.
+- App-Version 2.1.5, iOS Build 11, Android Version Code 11.
+
 ## 2.1.4
 
 - Beliebte Internet-Rezepte ersetzen den festen AT/DE-Katalog in der Entdecken-Ansicht.
