@@ -1,12 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Appearance,
   Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
+  PanResponder,
   Pressable,
   ScrollView,
   Share,
@@ -20,6 +23,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   acceptHouseholdInvitation,
@@ -49,14 +53,23 @@ import {
 } from './src/lib/cloud';
 import { getSeasonalQuickSearch, searchRecipePage, searchRecipes, type Recipe, type RecipeFilters } from './src/lib/recipes';
 import { isCloudConfigured, supabase } from './src/lib/supabase';
-import { ActionButton, EmptyState, IconButton, ScreenHeader, SectionTitle, SurfaceCard } from './src/ui/components';
-import { colors, radius, shadow, spacing, typography } from './src/ui/theme';
+import { ActionButton, EmptyState, IconButton, refreshUiComponentStyles, ScreenHeader, SectionTitle, SurfaceCard } from './src/ui/components';
+import { colors, radius, setThemePalette, shadow, spacing, typography } from './src/ui/theme';
+import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';
+import appConfig from './app.json';
 
 const DAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 const UNITS = ['Stk.', 'Pkg.', 'g', 'kg', 'ml', 'l', 'EL', 'TL', 'Bund', 'Dose'];
 const AMOUNTS = Array.from({ length: 80 }, (_, index) => (index + 1) / 2);
+const APP_VERSION = appConfig.expo.version;
+const GROCERY_SUGGESTIONS = [
+  'Milch', 'Butter', 'Eier', 'Brot', 'Semmeln', 'Joghurt', 'Käse', 'Schinken',
+  'Äpfel', 'Bananen', 'Tomaten', 'Gurke', 'Paprika', 'Kartoffeln', 'Zwiebeln',
+  'Knoblauch', 'Nudeln', 'Reis', 'Mehl', 'Zucker', 'Mineralwasser', 'Kaffee',
+  'Hühnerfleisch', 'Hackfleisch', 'Lachs', 'Salat', 'Zucchini', 'Karotten'
+];
 
-type Tab = 'heute' | 'woche' | 'einkauf' | 'rezepte';
+type Tab = StartTab;
 type RecipeSelection = { kind: 'recipe'; recipe: Recipe } | { kind: 'own'; recipe: OwnRecipe };
 type SearchFilters = { maxMinutes: number | null; vegetarianOnly: boolean; ingredient: string; excludeThisWeek: boolean };
 
@@ -105,6 +118,22 @@ function lastCookedLabel(entry?: MealHistoryEntry) {
   return `Zuletzt am ${date.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}`;
 }
 
+
+function useIosSwipeBack(onBack: () => void, enabled = true) {
+  return useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) => (
+      Platform.OS === 'ios'
+      && enabled
+      && gesture.x0 <= 34
+      && gesture.dx > 14
+      && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25
+    ),
+    onPanResponderRelease: (_event, gesture) => {
+      if (gesture.dx > 78 && gesture.vx > 0.15) onBack();
+    },
+  }), [enabled, onBack]);
+}
+
 function RecipeArtwork({ recipe, variant }: { recipe: Recipe; variant: 'card' | 'detail' }) {
   const [uri, setUri] = useState(recipe.image);
   useEffect(() => { setUri(recipe.image); }, [recipe.image, recipe.imageFallback]);
@@ -122,7 +151,7 @@ function RecipeArtwork({ recipe, variant }: { recipe: Recipe; variant: 'card' | 
   const iconSize = variant === 'detail' ? 42 : 28;
 
   if (!uri) {
-    return <View style={placeholderStyle}><MaterialCommunityIcons name={recipe.sourceKind === 'mealflow' ? 'silverware-fork-knife' : 'chef-hat'} size={iconSize} color={colors.accent} /></View>;
+    return <View style={placeholderStyle}><MaterialCommunityIcons name={'chef-hat'} size={iconSize} color={colors.accent} /></View>;
   }
 
   return <Image source={{ uri }} style={imageStyle} resizeMode="cover" onError={handleError} accessibilityLabel={`Bild zu ${recipe.title}`} />;
@@ -158,7 +187,7 @@ function AuthScreen() {
 
   return (
     <View style={styles.authRoot}>
-      <StatusBar style="dark" />
+      <StatusBar style={colors.background === '#0F1210' ? 'light' : 'dark'} />
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.authContent}>
         <View style={styles.brandMark}><MaterialCommunityIcons name="silverware-fork-knife" size={28} color="#FFFFFF" /></View>
         <Text style={styles.authBrand}>MealFlow</Text>
@@ -222,6 +251,7 @@ function HouseholdSheet({ visible, household, invitations, onClose, onChanged }:
   const [displayName, setDisplayName] = useState(household.myDisplayName);
   const [busy, setBusy] = useState(false);
   const canManage = household.role === 'owner' || household.role === 'admin';
+  const swipeBack = useIosSwipeBack(onClose, visible);
 
   useEffect(() => {
     if (visible) {
@@ -277,7 +307,7 @@ function HouseholdSheet({ visible, household, invitations, onClose, onChanged }:
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaProvider>
-        <View style={styles.fullModal}>
+        <View style={styles.fullModal} {...swipeBack.panHandlers}>
           <View style={styles.fullModalHeader}><IconButton icon="arrow-left" onPress={onClose} accessibilityLabel="Zurück" /><Text style={styles.fullModalTitle}>Haushalt</Text><View style={styles.headerSpacer} /></View>
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.formContent}>
             <SurfaceCard style={styles.householdHero}>
@@ -312,22 +342,81 @@ function HouseholdSheet({ visible, household, invitations, onClose, onChanged }:
   );
 }
 
-function SettingsSheet({ visible, email, household, pendingInvites, onClose, onHousehold }: { visible: boolean; email: string; household: Household; pendingInvites: number; onClose: () => void; onHousehold: () => void }) {
+function SettingsSheet({
+  visible,
+  email,
+  household,
+  pendingInvites,
+  preferences,
+  darkMode,
+  onClose,
+  onHousehold,
+  onPreferencesChange,
+}: {
+  visible: boolean;
+  email: string;
+  household: Household;
+  pendingInvites: number;
+  preferences: AppPreferences;
+  darkMode: boolean;
+  onClose: () => void;
+  onHousehold: () => void;
+  onPreferencesChange: (preferences: AppPreferences) => void;
+}) {
+  const update = (patch: Partial<AppPreferences>) => onPreferencesChange({ ...preferences, ...patch });
+  const themeOptions: { key: ThemeMode; label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'] }[] = [
+    { key: 'system', label: 'System', icon: 'cellphone-cog' },
+    { key: 'light', label: 'Hell', icon: 'white-balance-sunny' },
+    { key: 'dark', label: 'Dunkel', icon: 'weather-night' },
+  ];
+  const startOptions: { key: StartTab; label: string }[] = [
+    { key: 'heute', label: 'Heute' },
+    { key: 'woche', label: 'Woche' },
+    { key: 'einkauf', label: 'Einkauf' },
+    { key: 'rezepte', label: 'Rezepte' },
+  ];
+
   return (
-    <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal transparent visible={visible} animationType="slide" presentationStyle="overFullScreen" onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose} />
-      <View style={styles.settingsSheet}>
+      <View style={styles.settingsSheetV214} renderToHardwareTextureAndroid>
         <View style={styles.sheetHandle} />
-        <View style={styles.sheetHeader}><Text style={styles.sheetTitle}>Konto & Einstellungen</Text><IconButton icon="close" onPress={onClose} accessibilityLabel="Schließen" /></View>
-        <Pressable onPress={onHousehold}><SurfaceCard style={styles.settingsCard}><View style={styles.settingsIcon}><MaterialCommunityIcons name="home-heart" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.settingsLabel}>Haushalt</Text><Text style={styles.settingsValue}>{household.name}</Text><Text style={styles.settingsMeta}>{household.members.length} Mitglieder · Code {household.inviteCode}{pendingInvites ? ` · ${pendingInvites} offene Einladung` : ''}</Text></View><MaterialCommunityIcons name="chevron-right" size={24} color={colors.textTertiary} /></SurfaceCard></Pressable>
-        <SurfaceCard style={styles.settingsCard}><View style={styles.settingsIcon}><MaterialCommunityIcons name="account-outline" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.settingsLabel}>Angemeldet als</Text><Text style={styles.settingsValue}>{email || 'MealFlow-Konto'}</Text></View></SurfaceCard>
-        <SurfaceCard style={styles.settingsCard}><View style={styles.settingsIcon}><MaterialCommunityIcons name="cloud-check-outline" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.settingsLabel}>Synchronisierung</Text><Text style={styles.settingsValue}>Supabase Realtime aktiv</Text><Text style={styles.settingsMeta}>Plan, Einkauf, Rezepte und Kochverlauf werden im aktiven Haushalt synchronisiert.</Text></View></SurfaceCard>
-        <SurfaceCard style={styles.settingsCard}><View style={styles.settingsIcon}><MaterialCommunityIcons name="information-outline" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.settingsLabel}>App-Version</Text><Text style={styles.settingsValue}>MealFlow 2.1.3</Text></View></SurfaceCard>
-        <ActionButton label="Abmelden" icon="logout" variant="danger" onPress={() => supabase.auth.signOut().catch(() => undefined)} />
+        <View style={styles.sheetHeader}><Text style={styles.sheetTitle}>Einstellungen</Text><IconButton icon="close" onPress={onClose} accessibilityLabel="Schließen" /></View>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.settingsScrollContent}>
+          <Pressable onPress={onHousehold}><SurfaceCard style={styles.settingsCard}><View style={styles.settingsIcon}><MaterialCommunityIcons name="home-heart" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.settingsLabel}>Haushalt</Text><Text style={styles.settingsValue}>{household.name}</Text><Text style={styles.settingsMeta}>{household.members.length} Mitglieder · Code {household.inviteCode}{pendingInvites ? ` · ${pendingInvites} offene Einladung` : ''}</Text></View><MaterialCommunityIcons name="chevron-right" size={24} color={colors.textTertiary} /></SurfaceCard></Pressable>
+
+          <Text style={styles.settingsSectionTitle}>Darstellung</Text>
+          <SurfaceCard style={styles.settingsBlock}>
+            <Text style={styles.fieldLabel}>Erscheinungsbild</Text>
+            <View style={styles.themeSegmentRow}>{themeOptions.map((option) => { const active = preferences.themeMode === option.key; return <Pressable key={option.key} onPress={() => update({ themeMode: option.key })} style={[styles.themeSegment, active && styles.themeSegmentActive]}><MaterialCommunityIcons name={option.icon} size={19} color={active ? colors.accent : colors.textSecondary} /><Text style={[styles.themeSegmentText, active && styles.themeSegmentTextActive]}>{option.label}</Text></Pressable>; })}</View>
+            <Text style={styles.fieldHint}>{preferences.themeMode === 'system' ? `Folgt aktuell dem ${darkMode ? 'dunklen' : 'hellen'} Systemdesign.` : `MealFlow verwendet immer den ${preferences.themeMode === 'dark' ? 'dunklen' : 'hellen'} Modus.`}</Text>
+          </SurfaceCard>
+
+          <Text style={styles.settingsSectionTitle}>Einkaufsliste</Text>
+          <SurfaceCard style={styles.settingsBlock}>
+            <View style={styles.preferenceRow}><View style={styles.flex1}><Text style={styles.fieldLabel}>Kompakte Liste</Text><Text style={styles.fieldHint}>Mehr Produkte gleichzeitig sehen.</Text></View><Switch value={preferences.compactShopping} onValueChange={(value) => update({ compactShopping: value })} trackColor={{ true: colors.accentSoft }} thumbColor={preferences.compactShopping ? colors.accent : undefined} /></View>
+            <View style={styles.preferenceDivider} />
+            <View style={styles.preferenceRow}><View style={styles.flex1}><Text style={styles.fieldLabel}>Erledigte Produkte anzeigen</Text><Text style={styles.fieldHint}>Abgehakte Artikel unter der offenen Liste behalten.</Text></View><Switch value={preferences.showCompletedShopping} onValueChange={(value) => update({ showCompletedShopping: value })} trackColor={{ true: colors.accentSoft }} thumbColor={preferences.showCompletedShopping ? colors.accent : undefined} /></View>
+          </SurfaceCard>
+
+          <Text style={styles.settingsSectionTitle}>Persönlich</Text>
+          <SurfaceCard style={styles.settingsBlock}>
+            <Text style={styles.fieldLabel}>Startseite beim Öffnen</Text>
+            <View style={styles.startTabRow}>{startOptions.map((option) => <Pressable key={option.key} onPress={() => update({ startTab: option.key })} style={[styles.startTabChip, preferences.startTab === option.key && styles.startTabChipActive]}><Text style={[styles.startTabChipText, preferences.startTab === option.key && styles.startTabChipTextActive]}>{option.label}</Text></Pressable>)}</View>
+            <View style={styles.preferenceDivider} />
+            <View style={styles.preferenceRow}><View style={styles.flex1}><Text style={styles.fieldLabel}>Haptisches Feedback</Text><Text style={styles.fieldHint}>Kurze Rückmeldung bei wichtigen Aktionen.</Text></View><Switch value={preferences.hapticsEnabled} onValueChange={(value) => update({ hapticsEnabled: value })} trackColor={{ true: colors.accentSoft }} thumbColor={preferences.hapticsEnabled ? colors.accent : undefined} /></View>
+          </SurfaceCard>
+
+          <SurfaceCard style={styles.settingsCard}><View style={styles.settingsIcon}><MaterialCommunityIcons name="account-outline" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.settingsLabel}>Angemeldet als</Text><Text style={styles.settingsValue}>{email || 'MealFlow-Konto'}</Text></View></SurfaceCard>
+          <SurfaceCard style={styles.settingsCard}><View style={styles.settingsIcon}><MaterialCommunityIcons name="information-outline" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.settingsLabel}>App-Version</Text><Text style={styles.settingsValue}>MealFlow {APP_VERSION}</Text><Text style={styles.settingsMeta}>Version wird direkt aus der App-Konfiguration gelesen.</Text></View></SurfaceCard>
+          <ActionButton label="Abmelden" icon="logout" variant="danger" onPress={() => supabase.auth.signOut().catch(() => undefined)} />
+        </ScrollView>
       </View>
     </Modal>
   );
 }
+
+
 
 function HomeScreen({ household, meals, items, history, onNavigate, onSettings, onCooked }: { household: Household; meals: Record<string, string>; items: ShoppingItem[]; history: MealHistoryEntry[]; onNavigate: (tab: Tab) => void; onSettings: () => void; onCooked: (title: string) => Promise<void> }) {
   const currentDay = getCurrentDay();
@@ -401,21 +490,306 @@ function PlanScreen({ household, meals, setMeals, onSettings }: { household: Hou
   </>;
 }
 
-function ShoppingScreen({ household, items, setItems, onSettings }: { household: Household; items: ShoppingItem[]; setItems: React.Dispatch<React.SetStateAction<ShoppingItem[]>>; onSettings: () => void }) {
-  const [name, setName] = useState(''); const [amount, setAmount] = useState(1); const [unit, setUnit] = useState('Stk.'); const [pickerOpen, setPickerOpen] = useState(false);
-  const active = items.filter((item) => !item.done); const completed = items.filter((item) => item.done);
-  const add = async () => { const cleanName = name.trim(); if (!cleanName) return; const temporary: ShoppingItem = { id: `local-${Date.now()}`, name: cleanName, amount, unit, done: false }; setItems((current) => [temporary, ...current]); setName(''); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined); try { const remote = await addShoppingItem({ name: cleanName, amount, unit }); setItems((current) => current.map((item) => item.id === temporary.id ? remote : item)); } catch (error: any) { setItems((current) => current.filter((item) => item.id !== temporary.id)); Alert.alert('Produkt konnte nicht gespeichert werden', germanError(error?.message)); } };
-  const toggle = async (item: ShoppingItem) => { const nextDone = !item.done; setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, done: nextDone, completedByName: nextDone ? household.myDisplayName : null } : entry)); try { await setShoppingDone(item.id, nextDone); } catch (error: any) { Alert.alert('Änderung nicht gespeichert', germanError(error?.message)); } };
-  const remove = async (item: ShoppingItem) => { setItems((current) => current.filter((entry) => entry.id !== item.id)); try { await deleteShoppingItem(item.id); } catch (error: any) { Alert.alert('Löschen nicht möglich', germanError(error?.message)); } };
-  const renderItem = (item: ShoppingItem) => <View key={item.id} style={styles.shoppingRow}><Pressable accessibilityLabel={item.done ? `${item.name} als offen markieren` : `${item.name} als erledigt markieren`} onPress={() => toggle(item)} style={[styles.checkbox, item.done && styles.checkboxDone]}>{item.done ? <MaterialCommunityIcons name="check" size={17} color="#FFFFFF" /> : null}</Pressable><View style={styles.flex1}><Text style={[styles.shoppingName, item.done && styles.shoppingNameDone]}>{item.name}</Text><Text style={styles.shoppingMeta}>{formatAmount(item.amount)} {item.unit}{item.done && item.completedByName ? ` · erledigt von ${item.completedByName}` : ''}</Text></View><IconButton icon="trash-can-outline" tone="danger" onPress={() => remove(item)} accessibilityLabel={`${item.name} löschen`} /></View>;
-  return <><ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}><ScreenHeader title="Einkauf" subtitle={`${active.length} ${active.length === 1 ? 'Produkt' : 'Produkte'} offen · ${household.name}`} action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} /><SurfaceCard style={styles.addCard}><Text style={styles.inputLabel}>Produkt hinzufügen</Text><TextInput value={name} onChangeText={setName} onSubmitEditing={add} returnKeyType="done" placeholder="Was braucht ihr?" placeholderTextColor={colors.textTertiary} style={styles.productInput} /><View style={styles.addRow}><Pressable onPress={() => setPickerOpen(true)} style={styles.amountButton}><View><Text style={styles.miniLabel}>MENGE</Text><Text style={styles.amountText}>{formatAmount(amount)} {unit}</Text></View><MaterialCommunityIcons name="chevron-down" size={20} color={colors.textSecondary} /></Pressable><ActionButton label="Hinzufügen" icon="plus" onPress={add} style={styles.addButton} /></View></SurfaceCard><SectionTitle title="Offen" />{active.length ? <SurfaceCard style={styles.listCard}>{active.map(renderItem)}</SurfaceCard> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Die gemeinsame Einkaufsliste ist aktuell leer." /></SurfaceCard>}{completed.length ? <><SectionTitle title={`Erledigt · ${completed.length}`} /><SurfaceCard style={styles.listCard}>{completed.map(renderItem)}</SurfaceCard></> : null}</ScrollView><QuantitySheet visible={pickerOpen} amount={amount} unit={unit} onClose={() => setPickerOpen(false)} onDone={(nextAmount, nextUnit) => { setAmount(nextAmount); setUnit(nextUnit); setPickerOpen(false); }} /></>;
+function ShoppingSwipeRow({
+  item,
+  compact,
+  onToggle,
+  onDelete,
+}: {
+  item: ShoppingItem;
+  compact: boolean;
+  onToggle: (item: ShoppingItem) => void;
+  onDelete: (item: ShoppingItem) => void;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const pan = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.3,
+    onPanResponderMove: (_event, gesture) => {
+      if (gesture.dx < 0) translateX.setValue(Math.max(-104, gesture.dx));
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      if (gesture.dx < -58) {
+        Animated.timing(translateX, { toValue: -118, duration: 120, useNativeDriver: true }).start(() => {
+          translateX.setValue(0);
+          onDelete(item);
+        });
+      } else {
+        Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 24, bounciness: 0 }).start();
+      }
+    },
+    onPanResponderTerminate: () => Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 24, bounciness: 0 }).start(),
+  }), [item, onDelete, translateX]);
+
+  const meta = [
+    `${formatAmount(item.amount)} ${item.unit}`,
+    item.addedByName ? `von ${item.addedByName}` : null,
+    item.done && item.completedByName ? `erledigt von ${item.completedByName}` : null,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <View style={styles.swipeRowClip}>
+      <View style={styles.swipeDeleteBack}><MaterialCommunityIcons name="trash-can-outline" size={21} color="#FFFFFF" /><Text style={styles.swipeDeleteText}>Löschen</Text></View>
+      <Animated.View {...pan.panHandlers} style={{ transform: [{ translateX }] }}>
+        <View style={[styles.shoppingRowV214, compact && styles.shoppingRowCompact]}>
+          <Pressable accessibilityLabel={item.done ? `${item.name} als offen markieren` : `${item.name} als erledigt markieren`} onPress={() => onToggle(item)} style={[styles.checkbox, item.done && styles.checkboxDone]}>{item.done ? <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" /> : null}</Pressable>
+          <View style={styles.flex1}><Text style={[styles.shoppingName, item.done && styles.shoppingNameDone]} numberOfLines={1}>{item.name}</Text><Text style={styles.shoppingMetaTiny} numberOfLines={1}>{meta}</Text></View>
+        </View>
+      </Animated.View>
+    </View>
+  );
 }
 
-function OwnRecipeEditor({ visible, onClose, onSaved }: { visible: boolean; onClose: () => void; onSaved: (recipe: OwnRecipe) => void }) {
-  const [title, setTitle] = useState(''); const [ingredients, setIngredients] = useState(''); const [instructions, setInstructions] = useState(''); const [servings, setServings] = useState('2'); const [saving, setSaving] = useState(false);
-  const save = async () => { const cleanTitle = title.trim(); const ingredientList = ingredients.split('\n').map((line) => line.trim()).filter(Boolean); if (!cleanTitle || ingredientList.length === 0) { Alert.alert('Rezept unvollständig', 'Bitte gib einen Namen und mindestens eine Zutat ein.'); return; } setSaving(true); try { const recipe = await addOwnRecipe({ title: cleanTitle, ingredients: ingredientList, instructions: instructions.trim(), servings: Math.max(1, Math.min(20, Number(servings) || 2)) }); onSaved(recipe); setTitle(''); setIngredients(''); setInstructions(''); setServings('2'); onClose(); } catch (error: any) { Alert.alert('Rezept konnte nicht gespeichert werden', germanError(error?.message)); } finally { setSaving(false); } };
-  return <Modal visible={visible} animationType="slide" onRequestClose={onClose}><SafeAreaProvider><KeyboardAvoidingView style={styles.fullModal} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><View style={styles.fullModalHeader}><IconButton icon="arrow-left" onPress={onClose} accessibilityLabel="Zurück" /><Text style={styles.fullModalTitle}>Eigenes Rezept</Text><View style={styles.headerSpacer} /></View><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.formContent}><View style={styles.inputGroup}><Text style={styles.fieldLabel}>Name des Rezepts</Text><TextInput value={title} onChangeText={setTitle} placeholder="z. B. Omas Kartoffelgulasch" placeholderTextColor={colors.textTertiary} style={styles.formInput} /></View><View style={styles.inputGroup}><Text style={styles.fieldLabel}>Zutaten</Text><Text style={styles.fieldHint}>Eine Zutat pro Zeile.</Text><TextInput value={ingredients} onChangeText={setIngredients} multiline textAlignVertical="top" placeholder={'500 g Kartoffeln\n1 Zwiebel\n2 EL Öl'} placeholderTextColor={colors.textTertiary} style={[styles.formInput, styles.multilineInput]} /></View><View style={styles.inputGroup}><Text style={styles.fieldLabel}>Zubereitung</Text><TextInput value={instructions} onChangeText={setInstructions} multiline textAlignVertical="top" placeholder="Beschreibe die Zubereitung Schritt für Schritt …" placeholderTextColor={colors.textTertiary} style={[styles.formInput, styles.multilineInput]} /></View><View style={styles.inputGroup}><Text style={styles.fieldLabel}>Portionen</Text><TextInput value={servings} onChangeText={setServings} keyboardType="number-pad" style={[styles.formInput, styles.servingsInput]} /></View><ActionButton label="Rezept im Haushalt speichern" icon="content-save-outline" onPress={save} loading={saving} /></ScrollView></KeyboardAvoidingView></SafeAreaProvider></Modal>;
+function ShoppingScreen({
+  household,
+  items,
+  setItems,
+  onSettings,
+  preferences,
+}: {
+  household: Household;
+  items: ShoppingItem[];
+  setItems: React.Dispatch<React.SetStateAction<ShoppingItem[]>>;
+  onSettings: () => void;
+  preferences: AppPreferences;
+}) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [amount, setAmount] = useState(1);
+  const [unit, setUnit] = useState('Stk.');
+  const [recognizing, setRecognizing] = useState(false);
+  const [undoItem, setUndoItem] = useState<ShoppingItem | null>(null);
+
+  useSpeechRecognitionEvent('start', () => setRecognizing(true));
+  useSpeechRecognitionEvent('end', () => setRecognizing(false));
+  useSpeechRecognitionEvent('result', (event) => {
+    const transcript = event.results[0]?.transcript?.trim();
+    if (transcript) setName(transcript);
+  });
+  useSpeechRecognitionEvent('error', () => setRecognizing(false));
+
+  const active = useMemo(() => items.filter((item) => !item.done), [items]);
+  const completed = useMemo(() => items.filter((item) => item.done), [items]);
+  const suggestions = useMemo(() => {
+    const needle = normalizeTitle(name);
+    if (needle.length < 2) return [];
+    const source = Array.from(new Set([...items.map((item) => item.name), ...GROCERY_SUGGESTIONS]));
+    return source.filter((entry) => normalizeTitle(entry).startsWith(needle) && normalizeTitle(entry) !== needle).slice(0, 5);
+  }, [items, name]);
+
+  useEffect(() => {
+    if (!undoItem) return;
+    const timer = setTimeout(() => setUndoItem(null), 5200);
+    return () => clearTimeout(timer);
+  }, [undoItem]);
+
+  const feedback = () => {
+    if (preferences.hapticsEnabled) Haptics.selectionAsync().catch(() => undefined);
+  };
+
+  const openAdd = () => {
+    setName('');
+    setAmount(1);
+    setUnit('Stk.');
+    setAddOpen(true);
+    feedback();
+  };
+
+  const add = async (overrideName?: string) => {
+    const cleanName = (overrideName ?? name).trim();
+    if (!cleanName) return;
+    const temporary: ShoppingItem = {
+      id: `local-${Date.now()}`,
+      name: cleanName,
+      amount,
+      unit,
+      done: false,
+      addedByName: household.myDisplayName,
+    };
+    setItems((current) => [temporary, ...current]);
+    setAddOpen(false);
+    setName('');
+    if (preferences.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    try {
+      const remote = await addShoppingItem({ name: cleanName, amount, unit });
+      setItems((current) => current.map((item) => item.id === temporary.id ? remote : item));
+    } catch (error: any) {
+      setItems((current) => current.filter((item) => item.id !== temporary.id));
+      Alert.alert('Produkt konnte nicht gespeichert werden', germanError(error?.message));
+    }
+  };
+
+  const toggle = async (item: ShoppingItem) => {
+    const nextDone = !item.done;
+    setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, done: nextDone, completedByName: nextDone ? household.myDisplayName : null } : entry));
+    feedback();
+    try { await setShoppingDone(item.id, nextDone); }
+    catch (error: any) { Alert.alert('Änderung nicht gespeichert', germanError(error?.message)); }
+  };
+
+  const remove = async (item: ShoppingItem) => {
+    setItems((current) => current.filter((entry) => entry.id !== item.id));
+    setUndoItem(item);
+    if (preferences.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
+    try { await deleteShoppingItem(item.id); }
+    catch (error: any) {
+      setUndoItem(null);
+      setItems((current) => [item, ...current]);
+      Alert.alert('Löschen nicht möglich', germanError(error?.message));
+    }
+  };
+
+  const undoDelete = async () => {
+    const item = undoItem;
+    if (!item) return;
+    setUndoItem(null);
+    const temporary: ShoppingItem = { ...item, id: `undo-${Date.now()}`, done: false, completedBy: null, completedByName: null, completedAt: null, addedByName: household.myDisplayName };
+    setItems((current) => [temporary, ...current]);
+    try {
+      const remote = await addShoppingItem({ name: item.name, amount: item.amount, unit: item.unit });
+      setItems((current) => current.map((entry) => entry.id === temporary.id ? remote : entry));
+    } catch (error: any) {
+      setItems((current) => current.filter((entry) => entry.id !== temporary.id));
+      Alert.alert('Rückgängig nicht möglich', germanError(error?.message));
+    }
+  };
+
+  const startVoice = async () => {
+    try {
+      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Mikrofon nicht freigegeben', 'Aktiviere Mikrofon und Spracherkennung in den iPhone-Einstellungen, um Produkte einzusprechen.');
+        return;
+      }
+      ExpoSpeechRecognitionModule.start({ lang: 'de-AT', interimResults: true, continuous: false, maxAlternatives: 1 });
+    } catch (error: any) {
+      Alert.alert('Spracherkennung nicht verfügbar', germanError(error?.message));
+    }
+  };
+
+  const changeAmount = (delta: number) => setAmount((current) => Math.max(0.5, Math.min(40, current + delta)));
+
+  return <>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
+      <ScreenHeader title="Einkauf" subtitle={`${active.length} ${active.length === 1 ? 'Produkt' : 'Produkte'} offen · ${household.name}`} action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
+      <View style={styles.shoppingToolbar}><View><Text style={styles.shoppingToolbarLabel}>GEMEINSAME LISTE</Text><Text style={styles.shoppingToolbarTitle}>{active.length ? `${active.length} noch zu besorgen` : 'Alles erledigt'}</Text></View><Pressable onPress={openAdd} style={styles.shoppingAddButton}><MaterialCommunityIcons name="plus" size={23} color="#FFFFFF" /><Text style={styles.shoppingAddButtonText}>Produkt</Text></Pressable></View>
+
+      <SectionTitle title="Offen" />
+      {active.length ? <SurfaceCard style={styles.listCard}>{active.map((item) => <ShoppingSwipeRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onDelete={remove} />)}</SurfaceCard> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Eure gemeinsame Einkaufsliste ist aktuell leer." actionLabel="Produkt hinzufügen" onAction={openAdd} /></SurfaceCard>}
+
+      {preferences.showCompletedShopping && completed.length ? <><SectionTitle title={`Erledigt · ${completed.length}`} /><SurfaceCard style={styles.listCard}>{completed.map((item) => <ShoppingSwipeRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onDelete={remove} />)}</SurfaceCard></> : null}
+      <Text style={styles.swipeHint}>Zum Löschen einen Artikel nach links wischen.</Text>
+    </ScrollView>
+
+    <Modal transparent visible={addOpen} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setAddOpen(false)}>
+      <KeyboardAvoidingView style={styles.modalFlex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <Pressable style={styles.modalOverlay} onPress={() => setAddOpen(false)} />
+        <View style={styles.shoppingAddSheet} renderToHardwareTextureAndroid>
+          <View style={styles.sheetHandle} />
+          <View style={styles.shoppingSheetHeader}><View><Text style={styles.editorEyebrow}>EINKAUF</Text><Text style={styles.editorTitle}>Produkt hinzufügen</Text></View><IconButton icon="close" onPress={() => setAddOpen(false)} accessibilityLabel="Schließen" /></View>
+          <View style={styles.voiceInputShell}><MaterialCommunityIcons name="cart-outline" size={21} color={colors.textTertiary} /><TextInput autoFocus value={name} onChangeText={setName} onSubmitEditing={() => add()} returnKeyType="done" placeholder="z. B. Milch" placeholderTextColor={colors.textTertiary} style={styles.voiceProductInput} /><Pressable onPress={recognizing ? () => ExpoSpeechRecognitionModule.stop() : startVoice} style={[styles.micButton, recognizing && styles.micButtonActive]}><MaterialCommunityIcons name={recognizing ? 'stop' : 'microphone-outline'} size={22} color={recognizing ? '#FFFFFF' : colors.accent} /></Pressable></View>
+          {recognizing ? <Text style={styles.listeningText}>Ich höre zu … sprich den Produktnamen.</Text> : null}
+          {suggestions.length ? <View style={styles.suggestionBox}>{suggestions.map((suggestion) => <Pressable key={suggestion} onPress={() => setName(suggestion)} style={styles.suggestionRow}><MaterialCommunityIcons name="magnify" size={17} color={colors.textTertiary} /><Text style={styles.suggestionText}>{suggestion}</Text></Pressable>)}</View> : null}
+          <View style={styles.quantityControlRow}><View><Text style={styles.miniLabel}>MENGE</Text><Text style={styles.quantityValue}>{formatAmount(amount)}</Text></View><View style={styles.quantityButtons}><Pressable onPress={() => changeAmount(-0.5)} style={styles.quantityRoundButton}><MaterialCommunityIcons name="minus" size={20} color={colors.text} /></Pressable><Pressable onPress={() => changeAmount(0.5)} style={styles.quantityRoundButton}><MaterialCommunityIcons name="plus" size={20} color={colors.text} /></Pressable></View></View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitChips}>{UNITS.map((value) => <Pressable key={value} onPress={() => setUnit(value)} style={[styles.unitChip, unit === value && styles.unitChipActive]}><Text style={[styles.unitChipText, unit === value && styles.unitChipTextActive]}>{value}</Text></Pressable>)}</ScrollView>
+          <ActionButton label="Zur Einkaufsliste hinzufügen" icon="plus" onPress={() => add()} disabled={!name.trim()} />
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+
+    {undoItem ? <View style={styles.undoBar}><Text style={styles.undoText}>„{undoItem.name}“ gelöscht</Text><Pressable onPress={undoDelete}><Text style={styles.undoAction}>Rückgängig</Text></Pressable></View> : null}
+  </>;
 }
+
+
+
+function OwnRecipeEditor({ visible, onClose, onSaved }: { visible: boolean; onClose: () => void; onSaved: (recipe: OwnRecipe) => void }) {
+  const [step, setStep] = useState(0);
+  const [title, setTitle] = useState('');
+  const [servings, setServings] = useState('2');
+  const [ingredientInput, setIngredientInput] = useState('');
+  const [ingredients, setIngredients] = useState<string[]>([]);
+  const [instructions, setInstructions] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    setStep(0); setTitle(''); setServings('2'); setIngredientInput(''); setIngredients([]); setInstructions('');
+  }, [visible]);
+
+  const goBack = () => {
+    if (step > 0) setStep((current) => current - 1);
+    else onClose();
+  };
+  const swipeBack = useIosSwipeBack(goBack, visible);
+
+  const addIngredient = (value = ingredientInput) => {
+    const clean = value.trim();
+    if (!clean) return;
+    setIngredients((current) => current.some((entry) => normalizeTitle(entry) === normalizeTitle(clean)) ? current : [...current, clean]);
+    setIngredientInput('');
+  };
+
+  const next = () => {
+    if (step === 0 && !title.trim()) { Alert.alert('Name fehlt', 'Gib deinem Rezept zuerst einen Namen.'); return; }
+    if (step === 1 && ingredients.length === 0) { Alert.alert('Zutaten fehlen', 'Füge mindestens eine Zutat hinzu.'); return; }
+    setStep((current) => Math.min(2, current + 1));
+  };
+
+  const save = async () => {
+    if (!title.trim() || ingredients.length === 0) return;
+    setSaving(true);
+    try {
+      const recipe = await addOwnRecipe({
+        title: title.trim(),
+        ingredients,
+        instructions: instructions.trim(),
+        servings: Math.max(1, Math.min(20, Number(servings) || 2)),
+      });
+      onSaved(recipe);
+      onClose();
+    } catch (error: any) {
+      Alert.alert('Rezept konnte nicht gespeichert werden', germanError(error?.message));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const quickIngredients = GROCERY_SUGGESTIONS.filter((entry) => !ingredients.some((item) => normalizeTitle(item) === normalizeTitle(entry))).slice(0, 6);
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={goBack}>
+      <SafeAreaProvider>
+        <KeyboardAvoidingView style={styles.fullModal} behavior={Platform.OS === 'ios' ? 'padding' : undefined} {...swipeBack.panHandlers}>
+          <View style={styles.fullModalHeader}><IconButton icon="arrow-left" onPress={goBack} accessibilityLabel="Zurück" /><View style={styles.recipeWizardHeaderText}><Text style={styles.fullModalTitle}>Unser Rezept</Text><Text style={styles.recipeWizardStep}>Schritt {step + 1} von 3</Text></View><IconButton icon="close" onPress={onClose} accessibilityLabel="Schließen" /></View>
+          <View style={styles.recipeWizardProgress}>{[0, 1, 2].map((index) => <View key={index} style={[styles.recipeWizardProgressPart, index <= step && styles.recipeWizardProgressPartActive]} />)}</View>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.recipeWizardContent}>
+            {step === 0 ? <>
+              <View><Text style={styles.recipeWizardEyebrow}>GRUNDLAGEN</Text><Text style={styles.recipeWizardTitle}>Wie heißt euer Rezept?</Text><Text style={styles.recipeWizardSubtitle}>Nur die wichtigsten Angaben – Details kommen danach.</Text></View>
+              <View style={styles.inputGroup}><Text style={styles.fieldLabel}>Rezeptname</Text><TextInput autoFocus value={title} onChangeText={setTitle} placeholder="z. B. Cremige Hendl-Pasta" placeholderTextColor={colors.textTertiary} style={styles.formInput} /></View>
+              <View style={styles.inputGroup}><Text style={styles.fieldLabel}>Portionen</Text><View style={styles.servingSelector}><Pressable onPress={() => setServings(String(Math.max(1, (Number(servings) || 2) - 1)))} style={styles.quantityRoundButton}><MaterialCommunityIcons name="minus" size={20} color={colors.text} /></Pressable><Text style={styles.servingValue}>{Math.max(1, Number(servings) || 2)}</Text><Pressable onPress={() => setServings(String(Math.min(20, (Number(servings) || 2) + 1)))} style={styles.quantityRoundButton}><MaterialCommunityIcons name="plus" size={20} color={colors.text} /></Pressable></View></View>
+            </> : null}
+
+            {step === 1 ? <>
+              <View><Text style={styles.recipeWizardEyebrow}>ZUTATEN</Text><Text style={styles.recipeWizardTitle}>Was kommt hinein?</Text><Text style={styles.recipeWizardSubtitle}>Zutaten einzeln hinzufügen – dadurch bleibt die Liste sauber und gut lesbar.</Text></View>
+              <View style={styles.ingredientAddRow}><TextInput autoFocus value={ingredientInput} onChangeText={setIngredientInput} onSubmitEditing={() => addIngredient()} returnKeyType="done" placeholder="z. B. 500 g Kartoffeln" placeholderTextColor={colors.textTertiary} style={styles.ingredientAddInput} /><Pressable onPress={() => addIngredient()} style={styles.ingredientAddButton}><MaterialCommunityIcons name="plus" size={22} color="#FFFFFF" /></Pressable></View>
+              {ingredientInput.length < 2 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ingredientQuickRow}>{quickIngredients.map((entry) => <Pressable key={entry} onPress={() => addIngredient(entry)} style={styles.ingredientQuickChip}><Text style={styles.ingredientQuickText}>{entry}</Text></Pressable>)}</ScrollView> : null}
+              <SurfaceCard style={styles.ingredientEditorCard}>{ingredients.length ? ingredients.map((ingredient, index) => <View key={`${ingredient}-${index}`} style={styles.ingredientEditorRow}><View style={styles.ingredientNumber}><Text style={styles.ingredientNumberText}>{index + 1}</Text></View><Text style={styles.ingredientEditorText}>{ingredient}</Text><IconButton icon="close" onPress={() => setIngredients((current) => current.filter((_, itemIndex) => itemIndex !== index))} accessibilityLabel={`${ingredient} entfernen`} /></View>) : <EmptyState icon="format-list-bulleted" title="Noch keine Zutaten" text="Tippe eine Zutat ein oder wähle einen Vorschlag." />}</SurfaceCard>
+            </> : null}
+
+            {step === 2 ? <>
+              <View><Text style={styles.recipeWizardEyebrow}>ZUBEREITUNG</Text><Text style={styles.recipeWizardTitle}>Wie wird es gemacht?</Text><Text style={styles.recipeWizardSubtitle}>{ingredients.length} Zutaten · {Math.max(1, Number(servings) || 2)} Portionen</Text></View>
+              <View style={styles.inputGroup}><Text style={styles.fieldLabel}>Zubereitung</Text><TextInput autoFocus value={instructions} onChangeText={setInstructions} multiline textAlignVertical="top" placeholder="Beschreibe die Zubereitung möglichst einfach und Schritt für Schritt …" placeholderTextColor={colors.textTertiary} style={[styles.formInput, styles.recipeInstructionsInput]} /></View>
+              <SurfaceCard style={styles.recipeSummaryCard}><MaterialCommunityIcons name="check-circle-outline" size={22} color={colors.accent} /><View style={styles.flex1}><Text style={styles.fieldLabel}>{title}</Text><Text style={styles.fieldHint}>Bereit zum Speichern im gemeinsamen Haushalt.</Text></View></SurfaceCard>
+            </> : null}
+          </ScrollView>
+          <View style={styles.recipeWizardFooter}>{step > 0 ? <ActionButton label="Zurück" variant="secondary" onPress={() => setStep((current) => current - 1)} style={styles.flexButton} /> : null}<ActionButton label={step === 2 ? 'Rezept speichern' : 'Weiter'} icon={step === 2 ? 'content-save-outline' : 'arrow-right'} onPress={step === 2 ? save : next} loading={saving} style={styles.flexButton} /></View>
+        </KeyboardAvoidingView>
+      </SafeAreaProvider>
+    </Modal>
+  );
+}
+
+
 
 function RecipeFilterSheet({ visible, filters, onClose, onApply }: { visible: boolean; filters: SearchFilters; onClose: () => void; onApply: (filters: SearchFilters) => void }) {
   const [draft, setDraft] = useState(filters);
@@ -424,11 +798,12 @@ function RecipeFilterSheet({ visible, filters, onClose, onApply }: { visible: bo
 }
 
 function RecipeDetail({ selection, history, onClose, onAddIngredients, onPlan, onDeleteOwn }: { selection: RecipeSelection | null; history: MealHistoryEntry[]; onClose: () => void; onAddIngredients: (selection: RecipeSelection) => void; onPlan: (selection: RecipeSelection) => void; onDeleteOwn: (recipe: OwnRecipe) => void }) {
+  const swipeBack = useIosSwipeBack(onClose, Boolean(selection));
   if (!selection) return null;
   const recipe = selection.kind === 'recipe' ? selection.recipe : null; const own = selection.kind === 'own' ? selection.recipe : null; const title = recipe?.title ?? own?.title ?? '';
   const ingredients = recipe ? recipe.ingredients.map((item) => `${item.name}${item.amount ? ` · ${item.amount}` : ''}${item.unit ? ` ${item.unit}` : ''}`) : own?.ingredients ?? [];
   const last = history.find((entry) => normalizeTitle(entry.recipeTitle) === normalizeTitle(title));
-  return <Modal visible animationType="slide" onRequestClose={onClose}><SafeAreaProvider><ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.recipeDetailContent}><View style={styles.detailTopbar}><IconButton icon="arrow-left" onPress={onClose} accessibilityLabel="Zurück" />{own ? <IconButton icon="trash-can-outline" tone="danger" onPress={() => onDeleteOwn(own)} accessibilityLabel="Rezept löschen" /> : <View style={styles.headerSpacer} />}</View>{recipe ? <RecipeArtwork recipe={recipe} variant="detail" /> : <View style={styles.detailPlaceholder}><MaterialCommunityIcons name="chef-hat" size={42} color={colors.accent} /></View>}<Text style={styles.detailSource}>{own ? 'MEIN REZEPT' : recipe?.sourceKind === 'mealflow' ? 'MEALFLOW · AT/DE' : recipe?.sourceKind === 'web' ? `WEB · ${recipe.source || 'REZEPTQUELLE'}` : 'ONLINE-REZEPT'}</Text><Text style={styles.detailTitle}>{title}</Text><View style={styles.detailBadges}>{recipe?.minutes ? <Text style={styles.metaBadge}>{recipe.minutes} Min</Text> : null}{recipe?.vegetarian ? <Text style={styles.metaBadge}>Vegetarisch</Text> : null}{own ? <Text style={styles.metaBadge}>{own.servings} Portionen</Text> : null}{last ? <Text style={styles.metaBadge}>{lastCookedLabel(last)}</Text> : null}</View>{recipe?.description ? <Text style={styles.detailMeta}>{recipe.description}</Text> : null}{ingredients.length ? <><SectionTitle title="Zutaten" /><SurfaceCard style={styles.ingredientsCard}>{ingredients.map((ingredient, index) => <View key={`${ingredient}-${index}`} style={styles.ingredientRow}><View style={styles.ingredientDot} /><Text style={styles.ingredientText}>{ingredient}</Text></View>)}</SurfaceCard></> : recipe?.sourceKind === 'web' ? <SurfaceCard style={styles.instructionsCard}><Text style={styles.instructionsText}>Dieses Rezept stammt aus der Web-Suche. Öffne die Originalseite für Zutaten, Mengen und die vollständige Zubereitung.</Text></SurfaceCard> : null}{(own?.instructions || recipe?.instructions) ? <><SectionTitle title="Zubereitung" /><SurfaceCard style={styles.instructionsCard}><Text style={styles.instructionsText}>{own?.instructions || recipe?.instructions}</Text></SurfaceCard></> : null}{ingredients.length ? <ActionButton label="Zutaten zur Einkaufsliste" icon="cart-plus" onPress={() => onAddIngredients(selection)} /> : null}<ActionButton label="Als Abendessen einplanen" icon="calendar-plus" variant="secondary" onPress={() => onPlan(selection)} />{recipe?.url ? <ActionButton label={recipe.sourceKind === 'web' ? 'Rezept auf Website ansehen' : 'Originalquelle öffnen'} icon="open-in-new" variant={recipe.sourceKind === 'web' ? 'primary' : 'ghost'} onPress={() => Linking.openURL(recipe.url!).catch(() => undefined)} /> : null}</ScrollView></SafeAreaProvider></Modal>;
+  return <Modal visible animationType="slide" onRequestClose={onClose}><SafeAreaProvider><ScrollView {...swipeBack.panHandlers} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.recipeDetailContent}><View style={styles.detailTopbar}><IconButton icon="arrow-left" onPress={onClose} accessibilityLabel="Zurück" />{own ? <IconButton icon="trash-can-outline" tone="danger" onPress={() => onDeleteOwn(own)} accessibilityLabel="Rezept löschen" /> : <View style={styles.headerSpacer} />}</View>{recipe ? <RecipeArtwork recipe={recipe} variant="detail" /> : <View style={styles.detailPlaceholder}><MaterialCommunityIcons name="chef-hat" size={42} color={colors.accent} /></View>}<Text style={styles.detailSource}>{own ? 'UNSER REZEPT' : recipe?.sourceKind === 'web' ? `WEB · ${recipe.source || 'REZEPTQUELLE'}` : 'ONLINE-REZEPT'}</Text><Text style={styles.detailTitle}>{title}</Text><View style={styles.detailBadges}>{recipe?.minutes ? <Text style={styles.metaBadge}>{recipe.minutes} Min</Text> : null}{recipe?.vegetarian ? <Text style={styles.metaBadge}>Vegetarisch</Text> : null}{own ? <Text style={styles.metaBadge}>{own.servings} Portionen</Text> : null}{last ? <Text style={styles.metaBadge}>{lastCookedLabel(last)}</Text> : null}</View>{recipe?.description ? <Text style={styles.detailMeta}>{recipe.description}</Text> : null}{ingredients.length ? <><SectionTitle title="Zutaten" /><SurfaceCard style={styles.ingredientsCard}>{ingredients.map((ingredient, index) => <View key={`${ingredient}-${index}`} style={styles.ingredientRow}><View style={styles.ingredientDot} /><Text style={styles.ingredientText}>{ingredient}</Text></View>)}</SurfaceCard></> : recipe?.sourceKind === 'web' ? <SurfaceCard style={styles.instructionsCard}><Text style={styles.instructionsText}>Dieses Rezept stammt aus der Web-Suche. Öffne die Originalseite für Zutaten, Mengen und die vollständige Zubereitung.</Text></SurfaceCard> : null}{(own?.instructions || recipe?.instructions) ? <><SectionTitle title="Zubereitung" /><SurfaceCard style={styles.instructionsCard}><Text style={styles.instructionsText}>{own?.instructions || recipe?.instructions}</Text></SurfaceCard></> : null}{ingredients.length ? <ActionButton label="Zutaten zur Einkaufsliste" icon="cart-plus" onPress={() => onAddIngredients(selection)} /> : null}<ActionButton label="Als Abendessen einplanen" icon="calendar-plus" variant="secondary" onPress={() => onPlan(selection)} />{recipe?.url ? <ActionButton label={recipe.sourceKind === 'web' ? 'Rezept auf Website ansehen' : 'Originalquelle öffnen'} icon="open-in-new" variant={recipe.sourceKind === 'web' ? 'primary' : 'ghost'} onPress={() => Linking.openURL(recipe.url!).catch(() => undefined)} /> : null}</ScrollView></SafeAreaProvider></Modal>;
 }
 
 function RecipesScreen({ ownRecipes, setOwnRecipes, history, meals, onAddIngredients, onPlan, onSettings }: { ownRecipes: OwnRecipe[]; setOwnRecipes: React.Dispatch<React.SetStateAction<OwnRecipe[]>>; history: MealHistoryEntry[]; meals: Record<string, string>; onAddIngredients: (selection: RecipeSelection) => void; onPlan: (selection: RecipeSelection) => void; onSettings: () => void }) {
@@ -437,10 +812,10 @@ function RecipesScreen({ ownRecipes, setOwnRecipes, history, meals, onAddIngredi
   const activeFilterCount = Number(Boolean(filters.maxMinutes)) + Number(filters.vegetarianOnly) + Number(Boolean(filters.ingredient.trim())) + Number(filters.excludeThisWeek);
   const makeApiFilters = (nextFilters = filters): RecipeFilters => ({ maxMinutes: nextFilters.maxMinutes, vegetarianOnly: nextFilters.vegetarianOnly, ingredient: nextFilters.ingredient, excludeTitles: nextFilters.excludeThisWeek ? Object.values(meals).filter(Boolean) : [] });
   const runSearch = async (term = query, nextFilters = filters) => { const clean = term.trim(); setQuery(clean); setLoading(true); setPage(0); try { const result = await searchRecipePage(clean, makeApiFilters(nextFilters), 0); setRecipes(result.recipes); setHasMore(result.hasMore); setWebConfigured(result.webConfigured); if (!result.recipes.length) Alert.alert('Keine Treffer', 'Mit diesen Suchbegriffen und Filtern wurden keine passenden Rezepte gefunden.'); } catch (error: any) { Alert.alert('Rezeptsuche nicht möglich', germanError(error?.message)); } finally { setLoading(false); } };
-  const loadMore = async () => { if (!hasMore || loading || loadingMore || !query.trim()) return; const nextPage = page + 1; setLoadingMore(true); try { const result = await searchRecipePage(query, makeApiFilters(), nextPage); setRecipes((current) => { const seen = new Set(current.map((recipe) => recipe.url || recipe.id)); return [...current, ...result.recipes.filter((recipe) => !seen.has(recipe.url || recipe.id))]; }); setPage(nextPage); setHasMore(result.hasMore); setWebConfigured(result.webConfigured); } catch (error: any) { Alert.alert('Weitere Rezepte konnten nicht geladen werden', germanError(error?.message)); setHasMore(false); } finally { setLoadingMore(false); } };
-  useEffect(() => { searchRecipes('', { excludeTitles: Object.values(meals).filter(Boolean) }).then((result) => { setRecipes(result); setHasMore(false); }).catch(() => undefined); }, []);
+  const loadMore = async () => { if (!hasMore || loading || loadingMore) return; const nextPage = page + 1; setLoadingMore(true); try { const result = await searchRecipePage(query, makeApiFilters(), nextPage); setRecipes((current) => { const seen = new Set(current.map((recipe) => recipe.url || recipe.id)); return [...current, ...result.recipes.filter((recipe) => !seen.has(recipe.url || recipe.id))]; }); setPage(nextPage); setHasMore(result.hasMore); setWebConfigured(result.webConfigured); } catch (error: any) { Alert.alert('Weitere Rezepte konnten nicht geladen werden', germanError(error?.message)); setHasMore(false); } finally { setLoadingMore(false); } };
+  useEffect(() => { searchRecipePage('', { excludeTitles: Object.values(meals).filter(Boolean) }, 0).then((result) => { setRecipes(result.recipes); setHasMore(result.hasMore); setWebConfigured(result.webConfigured); }).catch(() => undefined); }, []);
   const removeOwn = async (recipe: OwnRecipe) => { Alert.alert('Rezept löschen?', `„${recipe.title}“ wird für den ganzen Haushalt gelöscht.`, [{ text: 'Abbrechen', style: 'cancel' }, { text: 'Löschen', style: 'destructive', onPress: async () => { setSelected(null); setOwnRecipes((current) => current.filter((item) => item.id !== recipe.id)); try { await deleteOwnRecipe(recipe.id); } catch (error: any) { Alert.alert('Löschen nicht möglich', germanError(error?.message)); } } }]); };
-  return <><ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} onScroll={({ nativeEvent }) => { const nearBottom = nativeEvent.layoutMeasurement.height + nativeEvent.contentOffset.y >= nativeEvent.contentSize.height - 320; if (nearBottom) loadMore(); }} scrollEventThrottle={300}><ScreenHeader title="Rezepte" subtitle="Wie eine Rezept-Suchmaschine: im Web entdecken, vergleichen und direkt einplanen." action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} /><View style={styles.recipeSegments}><Pressable onPress={() => setMode('entdecken')} style={[styles.recipeSegment, mode === 'entdecken' && styles.recipeSegmentActive]}><Text style={[styles.recipeSegmentText, mode === 'entdecken' && styles.recipeSegmentTextActive]}>Entdecken</Text></Pressable><Pressable onPress={() => setMode('eigene')} style={[styles.recipeSegment, mode === 'eigene' && styles.recipeSegmentActive]}><Text style={[styles.recipeSegmentText, mode === 'eigene' && styles.recipeSegmentTextActive]}>Unsere Rezepte</Text></Pressable></View>{mode === 'entdecken' ? <><View style={styles.searchRow}><View style={styles.searchShell}><MaterialCommunityIcons name="magnify" size={22} color={colors.textTertiary} /><TextInput value={query} onChangeText={setQuery} onSubmitEditing={() => runSearch()} returnKeyType="search" placeholder="Gericht oder Zutat suchen …" placeholderTextColor={colors.textTertiary} style={styles.searchInput} />{query ? <Pressable onPress={() => setQuery('')}><MaterialCommunityIcons name="close-circle" size={19} color={colors.textTertiary} /></Pressable> : null}</View><Pressable onPress={() => setFilterOpen(true)} style={styles.filterButton}><MaterialCommunityIcons name="tune-variant" size={22} color={colors.accent} />{activeFilterCount ? <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{activeFilterCount}</Text></View> : null}</Pressable></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>{quickSearch.map((term) => <Pressable key={term} onPress={() => runSearch(term)} style={styles.chip}><Text style={styles.chipText}>{term}</Text></Pressable>)}</ScrollView>{loading ? <View style={styles.loadingBox}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Passende Rezepte werden gesucht …</Text></View> : null}<View style={styles.sourceHint}><MaterialCommunityIcons name="web" size={18} color={colors.accent} /><Text style={styles.sourceHintText}>{webConfigured ? 'Web-Rezeptsuche mit Originalbildern + MealFlow AT/DE + TheMealDB · beim Scrollen werden weitere Treffer geladen' : 'MealFlow AT/DE + TheMealDB · Web-Rezeptsuche ist serverseitig noch nicht aktiviert'}</Text></View><View style={styles.recipeGrid}>{!loading && recipes.map((recipe) => { const last = history.find((entry) => normalizeTitle(entry.recipeTitle) === normalizeTitle(recipe.title)); return <Pressable key={recipe.id} onPress={() => setSelected({ kind: 'recipe', recipe })} style={({ pressed }) => [styles.recipeCard, { opacity: pressed ? 0.8 : 1 }]}><RecipeArtwork recipe={recipe} variant="card" /><View style={styles.recipeCardBody}><Text style={styles.recipeSource}>{recipe.sourceKind === 'mealflow' ? 'AT/DE' : recipe.sourceKind === 'web' ? (recipe.source || 'WEB') : 'ONLINE'}</Text><Text style={styles.recipeCardTitle} numberOfLines={2}>{recipe.title}</Text><Text style={styles.recipeCardMeta} numberOfLines={3}>{recipe.sourceKind === 'web' ? (recipe.description || 'Web-Rezept öffnen und ansehen') : ([recipe.minutes ? `${recipe.minutes} Min` : null, recipe.vegetarian ? 'Vegetarisch' : null, last ? lastCookedLabel(last) : null].filter(Boolean).join(' · ') || `${recipe.ingredients.length} Zutaten`)}</Text></View></Pressable>; })}</View>{loadingMore ? <View style={styles.loadingBox}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Weitere Rezepte werden geladen …</Text></View> : null}{!loading && !loadingMore && hasMore ? <Text style={styles.loadingText}>Weiter scrollen für mehr Treffer</Text> : null}{!loading && !recipes.length ? <SurfaceCard><EmptyState icon="chef-hat" title="Keine Rezepte gefunden" text="Passe Suchbegriff oder Filter an." /></SurfaceCard> : null}</> : <><ActionButton label="Eigenes Rezept hinzufügen" icon="plus" onPress={() => setEditorOpen(true)} />{ownRecipes.length === 0 ? <SurfaceCard><EmptyState icon="book-open-page-variant-outline" title="Noch keine gemeinsamen Rezepte" text="Speichert Familienrezepte und Lieblingsgerichte für den ganzen Haushalt." actionLabel="Erstes Rezept anlegen" onAction={() => setEditorOpen(true)} /></SurfaceCard> : <View style={styles.ownRecipeList}>{ownRecipes.map((recipe) => <Pressable key={recipe.id} onPress={() => setSelected({ kind: 'own', recipe })} style={({ pressed }) => [styles.ownRecipeRow, { opacity: pressed ? 0.75 : 1 }]}><View style={styles.ownRecipeIcon}><MaterialCommunityIcons name="book-open-page-variant-outline" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.ownRecipeTitle}>{recipe.title}</Text><Text style={styles.ownRecipeMeta}>{recipe.ingredients.length} Zutaten · {recipe.servings} Portionen</Text></View><MaterialCommunityIcons name="chevron-right" size={24} color={colors.textTertiary} /></Pressable>)}</View>}</>}</ScrollView><RecipeFilterSheet visible={filterOpen} filters={filters} onClose={() => setFilterOpen(false)} onApply={(next) => { setFilters(next); runSearch(query, next); }} /><OwnRecipeEditor visible={editorOpen} onClose={() => setEditorOpen(false)} onSaved={(recipe) => setOwnRecipes((current) => [recipe, ...current])} /><RecipeDetail selection={selected} history={history} onClose={() => setSelected(null)} onAddIngredients={(selection) => { onAddIngredients(selection); setSelected(null); }} onPlan={(selection) => { onPlan(selection); setSelected(null); }} onDeleteOwn={removeOwn} /></>;
+  return <><ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} onScroll={({ nativeEvent }) => { const nearBottom = nativeEvent.layoutMeasurement.height + nativeEvent.contentOffset.y >= nativeEvent.contentSize.height - 320; if (nearBottom) loadMore(); }} scrollEventThrottle={300}><ScreenHeader title="Rezepte" subtitle="Beliebte Rezepte aus dem Internet entdecken, durchsuchen und direkt einplanen." action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} /><View style={styles.recipeSegments}><Pressable onPress={() => setMode('entdecken')} style={[styles.recipeSegment, mode === 'entdecken' && styles.recipeSegmentActive]}><Text style={[styles.recipeSegmentText, mode === 'entdecken' && styles.recipeSegmentTextActive]}>Entdecken</Text></Pressable><Pressable onPress={() => setMode('eigene')} style={[styles.recipeSegment, mode === 'eigene' && styles.recipeSegmentActive]}><Text style={[styles.recipeSegmentText, mode === 'eigene' && styles.recipeSegmentTextActive]}>Unsere Rezepte</Text></Pressable></View>{mode === 'entdecken' ? <><View style={styles.searchRow}><View style={styles.searchShell}><MaterialCommunityIcons name="magnify" size={22} color={colors.textTertiary} /><TextInput value={query} onChangeText={setQuery} onSubmitEditing={() => runSearch()} returnKeyType="search" placeholder="Gericht oder Zutat suchen …" placeholderTextColor={colors.textTertiary} style={styles.searchInput} />{query ? <Pressable onPress={() => setQuery('')}><MaterialCommunityIcons name="close-circle" size={19} color={colors.textTertiary} /></Pressable> : null}</View><Pressable onPress={() => setFilterOpen(true)} style={styles.filterButton}><MaterialCommunityIcons name="tune-variant" size={22} color={colors.accent} />{activeFilterCount ? <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{activeFilterCount}</Text></View> : null}</Pressable></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>{quickSearch.map((term) => <Pressable key={term} onPress={() => runSearch(term)} style={styles.chip}><Text style={styles.chipText}>{term}</Text></Pressable>)}</ScrollView>{loading ? <View style={styles.loadingBox}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Passende Rezepte werden gesucht …</Text></View> : null}<View style={styles.sourceHint}><MaterialCommunityIcons name="web" size={18} color={colors.accent} /><Text style={styles.sourceHintText}>{webConfigured ? 'Beliebte Web-Rezepte mit Originalbildern · beim Scrollen werden weitere Treffer geladen' : 'Web-Rezeptsuche ist noch nicht aktiviert · Online-Fallback bleibt verfügbar'}</Text></View><View style={styles.recipeGrid}>{!loading && recipes.map((recipe) => { const last = history.find((entry) => normalizeTitle(entry.recipeTitle) === normalizeTitle(recipe.title)); return <Pressable key={recipe.id} onPress={() => setSelected({ kind: 'recipe', recipe })} style={({ pressed }) => [styles.recipeCard, { opacity: pressed ? 0.8 : 1 }]}><RecipeArtwork recipe={recipe} variant="card" /><View style={styles.recipeCardBody}><Text style={styles.recipeSource}>{recipe.sourceKind === 'web' ? (recipe.source || 'WEB') : 'ONLINE'}</Text><Text style={styles.recipeCardTitle} numberOfLines={2}>{recipe.title}</Text><Text style={styles.recipeCardMeta} numberOfLines={3}>{recipe.sourceKind === 'web' ? (recipe.description || 'Web-Rezept öffnen und ansehen') : ([recipe.minutes ? `${recipe.minutes} Min` : null, recipe.vegetarian ? 'Vegetarisch' : null, last ? lastCookedLabel(last) : null].filter(Boolean).join(' · ') || `${recipe.ingredients.length} Zutaten`)}</Text></View></Pressable>; })}</View>{loadingMore ? <View style={styles.loadingBox}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Weitere Rezepte werden geladen …</Text></View> : null}{!loading && !loadingMore && hasMore ? <Text style={styles.loadingText}>Weiter scrollen für mehr Treffer</Text> : null}{!loading && !recipes.length ? <SurfaceCard><EmptyState icon="chef-hat" title="Keine Rezepte gefunden" text="Passe Suchbegriff oder Filter an." /></SurfaceCard> : null}</> : <><ActionButton label="Unser Rezept anlegen" icon="plus" onPress={() => setEditorOpen(true)} />{ownRecipes.length === 0 ? <SurfaceCard><EmptyState icon="book-open-page-variant-outline" title="Noch keine gemeinsamen Rezepte" text="Speichert Familienrezepte und Lieblingsgerichte für den ganzen Haushalt." actionLabel="Erstes Rezept anlegen" onAction={() => setEditorOpen(true)} /></SurfaceCard> : <View style={styles.ownRecipeList}>{ownRecipes.map((recipe) => <Pressable key={recipe.id} onPress={() => setSelected({ kind: 'own', recipe })} style={({ pressed }) => [styles.ownRecipeRow, { opacity: pressed ? 0.75 : 1 }]}><View style={styles.ownRecipeIcon}><MaterialCommunityIcons name="book-open-page-variant-outline" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.ownRecipeTitle}>{recipe.title}</Text><Text style={styles.ownRecipeMeta}>{recipe.ingredients.length} Zutaten · {recipe.servings} Portionen</Text></View><MaterialCommunityIcons name="chevron-right" size={24} color={colors.textTertiary} /></Pressable>)}</View>}</>}</ScrollView><RecipeFilterSheet visible={filterOpen} filters={filters} onClose={() => setFilterOpen(false)} onApply={(next) => { setFilters(next); runSearch(query, next); }} /><OwnRecipeEditor visible={editorOpen} onClose={() => setEditorOpen(false)} onSaved={(recipe) => setOwnRecipes((current) => [recipe, ...current])} /><RecipeDetail selection={selected} history={history} onClose={() => setSelected(null)} onAddIngredients={(selection) => { onAddIngredients(selection); setSelected(null); }} onPlan={(selection) => { onPlan(selection); setSelected(null); }} onDeleteOwn={removeOwn} /></>;
 }
 
 function DayPicker({ selection, onClose, onSelect }: { selection: RecipeSelection | null; onClose: () => void; onSelect: (day: string) => void }) {
@@ -454,16 +829,73 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
 }
 
 function MainApp() {
-  const insets = useSafeAreaInsets(); const [tab, setTab] = useState<Tab>('heute'); const [items, setItems] = useState<ShoppingItem[]>([]); const [meals, setMeals] = useState<Record<string, string>>({}); const [ownRecipes, setOwnRecipes] = useState<OwnRecipe[]>([]); const [history, setHistory] = useState<MealHistoryEntry[]>([]); const [household, setHousehold] = useState<Household | null>(null); const [invitations, setInvitations] = useState<HouseholdInvitation[]>([]); const [ready, setReady] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [householdOpen, setHouseholdOpen] = useState(false); const [email, setEmail] = useState(''); const [recipeToPlan, setRecipeToPlan] = useState<RecipeSelection | null>(null);
+  const insets = useSafeAreaInsets();
+  const [tab, setTab] = useState<Tab>('heute');
+  const [items, setItems] = useState<ShoppingItem[]>([]);
+  const [meals, setMeals] = useState<Record<string, string>>({});
+  const [ownRecipes, setOwnRecipes] = useState<OwnRecipe[]>([]);
+  const [history, setHistory] = useState<MealHistoryEntry[]>([]);
+  const [household, setHousehold] = useState<Household | null>(null);
+  const [invitations, setInvitations] = useState<HouseholdInvitation[]>([]);
+  const [ready, setReady] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [householdOpen, setHouseholdOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [recipeToPlan, setRecipeToPlan] = useState<RecipeSelection | null>(null);
+  const [preferences, setPreferences] = useState<AppPreferences>(DEFAULT_PREFERENCES);
+  const [darkMode, setDarkMode] = useState(false);
+
+  const applyAppearance = (mode: ThemeMode) => {
+    const nextDark = mode === 'dark' || (mode === 'system' && Appearance.getColorScheme() === 'dark');
+    setThemePalette(nextDark ? 'dark' : 'light');
+    refreshAppStyles();
+    setDarkMode(nextDark);
+  };
+
+  const updatePreferences = (next: AppPreferences) => {
+    setPreferences(next);
+    applyAppearance(next.themeMode);
+    savePreferences(next).catch(() => undefined);
+  };
 
   const reloadAll = async () => {
     clearHouseholdCache();
     const nextHousehold = await loadHousehold();
-    const [shopping, plan, customRecipes, cookedHistory, pending, userResult] = await Promise.all([loadShopping(), loadMealPlan(), loadOwnRecipes(), loadMealHistory(), loadPendingHouseholdInvitations(), supabase.auth.getUser()]);
-    setHousehold(nextHousehold); setItems(shopping); setMeals(Object.fromEntries(plan.map((entry) => [entry.day, entry.meal ?? '']))); setOwnRecipes(customRecipes); setHistory(cookedHistory); setInvitations(pending); setEmail(userResult.data.user?.email ?? '');
+    const [shopping, plan, customRecipes, cookedHistory, pending, userResult] = await Promise.all([
+      loadShopping(),
+      loadMealPlan(),
+      loadOwnRecipes(),
+      loadMealHistory(),
+      loadPendingHouseholdInvitations(),
+      supabase.auth.getUser(),
+    ]);
+    setHousehold(nextHousehold);
+    setItems(shopping);
+    setMeals(Object.fromEntries(plan.map((entry) => [entry.day, entry.meal ?? ''])));
+    setOwnRecipes(customRecipes);
+    setHistory(cookedHistory);
+    setInvitations(pending);
+    setEmail(userResult.data.user?.email ?? '');
   };
 
-  useEffect(() => { reloadAll().catch((error) => Alert.alert('Daten konnten nicht geladen werden', germanError(error?.message))).finally(() => setReady(true)); }, []);
+  useEffect(() => {
+    loadPreferences().then((loaded) => {
+      setPreferences(loaded);
+      setTab(loaded.startTab);
+      applyAppearance(loaded.themeMode);
+    }).catch(() => undefined);
+    reloadAll().catch((error) => Alert.alert('Daten konnten nicht geladen werden', germanError(error?.message))).finally(() => setReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (preferences.themeMode !== 'system') return;
+    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
+      setThemePalette(colorScheme === 'dark' ? 'dark' : 'light');
+      refreshAppStyles();
+      setDarkMode(colorScheme === 'dark');
+    });
+    return () => subscription.remove();
+  }, [preferences.themeMode]);
 
   useEffect(() => {
     if (!household?.id) return;
@@ -478,14 +910,62 @@ function MainApp() {
     return () => { supabase.removeChannel(channel); };
   }, [household?.id]);
 
-  const changeTab = (next: Tab) => { setTab(next); Haptics.selectionAsync().catch(() => undefined); };
-  const addRecipeIngredients = (selection: RecipeSelection) => { const rawIngredients = selection.kind === 'recipe' ? selection.recipe.ingredients.map((ingredient) => ({ name: ingredient.name, amount: ingredient.amount ?? 1, unit: UNITS.includes(ingredient.unit ?? '') ? ingredient.unit! : 'Stk.' })) : selection.recipe.ingredients.map((ingredient) => ({ name: ingredient, amount: 1, unit: 'Stk.' })); const temporary = rawIngredients.slice(0, 30).map((ingredient, index) => ({ id: `recipe-${Date.now()}-${index}`, done: false, ...ingredient })); setItems((current) => [...temporary, ...current]); temporary.forEach((item) => addShoppingItem({ name: item.name, amount: item.amount, unit: item.unit }).catch(() => undefined)); changeTab('einkauf'); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined); };
-  const planRecipe = async (day: string) => { if (!recipeToPlan) return; const title = recipeToPlan.recipe.title; setMeals((current) => ({ ...current, [day]: title })); setRecipeToPlan(null); changeTab('woche'); try { await saveMeal(day, title); } catch (error: any) { Alert.alert('Planung nicht gespeichert', germanError(error?.message)); } };
-  const markCooked = async (title: string) => { try { await recordCookedMeal(title); setHistory(await loadMealHistory()); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined); } catch (error: any) { Alert.alert('Kochverlauf', germanError(error?.message)); } };
+  const changeTab = (next: Tab) => {
+    setTab(next);
+    if (preferences.hapticsEnabled) Haptics.selectionAsync().catch(() => undefined);
+  };
+
+  const addRecipeIngredients = (selection: RecipeSelection) => {
+    const rawIngredients = selection.kind === 'recipe'
+      ? selection.recipe.ingredients.map((ingredient) => ({ name: ingredient.name, amount: ingredient.amount ?? 1, unit: UNITS.includes(ingredient.unit ?? '') ? ingredient.unit! : 'Stk.' }))
+      : selection.recipe.ingredients.map((ingredient) => ({ name: ingredient, amount: 1, unit: 'Stk.' }));
+    const temporary: ShoppingItem[] = rawIngredients.slice(0, 30).map((ingredient, index) => ({ id: `recipe-${Date.now()}-${index}`, done: false, addedByName: household?.myDisplayName, ...ingredient }));
+    setItems((current) => [...temporary, ...current]);
+    temporary.forEach((item) => addShoppingItem({ name: item.name, amount: item.amount, unit: item.unit }).catch(() => undefined));
+    changeTab('einkauf');
+    if (preferences.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+  };
+
+  const planRecipe = async (day: string) => {
+    if (!recipeToPlan) return;
+    const title = recipeToPlan.recipe.title;
+    setMeals((current) => ({ ...current, [day]: title }));
+    setRecipeToPlan(null);
+    changeTab('woche');
+    try { await saveMeal(day, title); }
+    catch (error: any) { Alert.alert('Planung nicht gespeichert', germanError(error?.message)); }
+  };
+
+  const markCooked = async (title: string) => {
+    try {
+      await recordCookedMeal(title);
+      setHistory(await loadMealHistory());
+      if (preferences.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error: any) {
+      Alert.alert('Kochverlauf', germanError(error?.message));
+    }
+  };
 
   if (!ready || !household) return <View style={styles.loadingScreen}><View style={styles.brandMark}><MaterialCommunityIcons name="silverware-fork-knife" size={28} color="#FFFFFF" /></View><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Euer Haushalt wird synchronisiert …</Text></View>;
-  return <View style={[styles.appRoot, { paddingTop: insets.top }]}><StatusBar style="dark" /><View style={styles.screenArea}>{tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}{tab === 'woche' ? <PlanScreen household={household} meals={meals} setMeals={setMeals} onSettings={() => setSettingsOpen(true)} /> : null}{tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setItems} onSettings={() => setSettingsOpen(true)} /> : null}{tab === 'rezepte' ? <RecipesScreen ownRecipes={ownRecipes} setOwnRecipes={setOwnRecipes} history={history} meals={meals} onAddIngredients={addRecipeIngredients} onPlan={setRecipeToPlan} onSettings={() => setSettingsOpen(true)} /> : null}</View><View style={{ paddingBottom: Math.max(insets.bottom, 8), backgroundColor: colors.surface }}><TabBar tab={tab} onChange={changeTab} /></View><SettingsSheet visible={settingsOpen} email={email} household={household} pendingInvites={invitations.length} onClose={() => setSettingsOpen(false)} onHousehold={() => { setSettingsOpen(false); setHouseholdOpen(true); }} /><HouseholdSheet visible={householdOpen} household={household} invitations={invitations} onClose={() => setHouseholdOpen(false)} onChanged={reloadAll} /><DayPicker selection={recipeToPlan} onClose={() => setRecipeToPlan(null)} onSelect={planRecipe} /></View>;
+
+  return (
+    <View style={[styles.appRoot, { paddingTop: insets.top }]}>
+      <StatusBar style={darkMode ? 'light' : 'dark'} />
+      <View style={styles.screenArea}>
+        {tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
+        {tab === 'woche' ? <PlanScreen household={household} meals={meals} setMeals={setMeals} onSettings={() => setSettingsOpen(true)} /> : null}
+        {tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setItems} preferences={preferences} onSettings={() => setSettingsOpen(true)} /> : null}
+        {tab === 'rezepte' ? <RecipesScreen ownRecipes={ownRecipes} setOwnRecipes={setOwnRecipes} history={history} meals={meals} onAddIngredients={addRecipeIngredients} onPlan={setRecipeToPlan} onSettings={() => setSettingsOpen(true)} /> : null}
+      </View>
+      <View style={{ paddingBottom: Math.max(insets.bottom, 8), backgroundColor: colors.surface }}><TabBar tab={tab} onChange={changeTab} /></View>
+      <SettingsSheet visible={settingsOpen} email={email} household={household} pendingInvites={invitations.length} preferences={preferences} darkMode={darkMode} onPreferencesChange={updatePreferences} onClose={() => setSettingsOpen(false)} onHousehold={() => { setSettingsOpen(false); setHouseholdOpen(true); }} />
+      <HouseholdSheet visible={householdOpen} household={household} invitations={invitations} onClose={() => setHouseholdOpen(false)} onChanged={reloadAll} />
+      <DayPicker selection={recipeToPlan} onClose={() => setRecipeToPlan(null)} onSelect={planRecipe} />
+    </View>
+  );
 }
+
+
 
 function Root() {
   const [authenticated, setAuthenticated] = useState(false); const [checking, setChecking] = useState(true);
@@ -497,12 +977,13 @@ function Root() {
 
 export default function App() { return <SafeAreaProvider><Root /></SafeAreaProvider>; }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   appRoot: { flex: 1, backgroundColor: colors.background }, screenArea: { flex: 1 }, screenContent: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, gap: 18 }, flex1: { flex: 1 }, flexButton: { flex: 1 }, modalFlex: { flex: 1, justifyContent: 'flex-end' }, fullModal: { flex: 1, backgroundColor: colors.background }, headerSpacer: { width: 44, height: 44 },
   authRoot: { flex: 1, backgroundColor: colors.background }, authContent: { flexGrow: 1, justifyContent: 'center', padding: 24, gap: 12 }, brandMark: { width: 58, height: 58, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', ...shadow }, authBrand: { ...typography.title, color: colors.accent, marginTop: 6 }, authHero: { ...typography.hero, color: colors.text, maxWidth: 380 }, authSubtitle: { ...typography.body, color: colors.textSecondary, maxWidth: 370, marginBottom: 12 }, authCard: { padding: 18, gap: 16 }, segmentedControl: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: 4 }, segmentButton: { flex: 1, minHeight: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, segmentButtonActive: { backgroundColor: colors.surface, ...shadow }, segmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, segmentTextActive: { color: colors.text }, inputGroup: { gap: 7 }, inputLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, inputShell: { minHeight: 52, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.md }, textInput: { flex: 1, ...typography.body, color: colors.text, paddingVertical: 12 }, authHint: { ...typography.caption, color: colors.textTertiary, textAlign: 'center' },
   heroCard: { padding: 20, gap: 10 }, heroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, heroLabel: { ...typography.label, color: colors.accent, marginTop: 4 }, heroMeal: { ...typography.h2, color: colors.text }, heroMeta: { ...typography.body, color: colors.textSecondary, marginBottom: 4 }, heroActions: { flexDirection: 'row', gap: 10 }, metricsRow: { flexDirection: 'row', gap: 12 }, metricCard: { flex: 1, padding: 16, gap: 7 }, metricNumber: { fontSize: 26, lineHeight: 31, fontWeight: '800', color: colors.text }, metricLabel: { ...typography.caption, color: colors.textSecondary }, quickGrid: { gap: 10 }, quickAction: { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, ...shadow }, quickIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, quickTitle: { ...typography.bodyStrong, color: colors.text, minWidth: 95 }, quickText: { ...typography.caption, color: colors.textSecondary, flex: 1 },
   weekOverviewCard: { padding: 18, gap: 14 }, weekOverviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, weekOverviewLabel: { ...typography.label, color: colors.accent }, weekOverviewTitle: { ...typography.title, color: colors.text, marginTop: 3 }, weekOverviewBadge: { minHeight: 38, paddingHorizontal: 11, borderRadius: radius.pill, backgroundColor: colors.accentSoft, flexDirection: 'row', alignItems: 'center', gap: 6 }, weekOverviewBadgeText: { ...typography.caption, color: colors.accent, fontWeight: '800' }, weekProgressTrack: { height: 8, borderRadius: 5, backgroundColor: colors.surfaceMuted, overflow: 'hidden' }, weekProgressFill: { height: '100%', borderRadius: 5, backgroundColor: colors.accent }, weekStrip: { flexDirection: 'row', gap: 5 }, weekStripDay: { flex: 1, minHeight: 68, borderRadius: 15, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', gap: 3, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent' }, weekStripDayToday: { backgroundColor: colors.accentSoft, borderColor: '#AFC8B6' }, weekStripDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, weekStripDowToday: { color: colors.accent }, weekStripDate: { fontSize: 17, lineHeight: 20, fontWeight: '800', color: colors.text }, weekStripDateToday: { color: colors.accent }, weekStripDot: { width: 6, height: 6, borderRadius: 3 }, weekStripDotPlanned: { backgroundColor: colors.accent }, weekStripDotOpen: { backgroundColor: colors.border }, weekSectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2 }, weekSectionTitle: { ...typography.title, color: colors.text }, weekSectionHint: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  dayList: { gap: 12 }, dayCard: { minHeight: 112, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, ...shadow }, dayCardToday: { borderColor: '#AFC8B6', backgroundColor: '#FBFDFB' }, dayDateBlock: { width: 58, height: 76, borderRadius: 18, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayDateBlockToday: { backgroundColor: colors.accent }, dayDateDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, dayDateDowToday: { color: '#DCEADF' }, dayDateNumber: { fontSize: 24, lineHeight: 28, fontWeight: '800', color: colors.text }, dayDateNumberToday: { color: '#FFFFFF' }, dayDateMonth: { fontSize: 10, lineHeight: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }, dayDateMonthToday: { color: '#DCEADF' }, dayCardContent: { flex: 1, gap: 5 }, dayTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }, dayName: { ...typography.caption, color: colors.textSecondary, fontWeight: '800' }, todayPill: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, overflow: 'hidden', fontWeight: '800' }, dayStatusPill: { fontSize: 10, lineHeight: 12, fontWeight: '800', paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.pill, overflow: 'hidden' }, dayStatusPlanned: { color: colors.accent, backgroundColor: colors.accentSoft }, dayStatusOpen: { color: colors.textTertiary, backgroundColor: colors.surfaceMuted }, dayMeal: { fontSize: 19, lineHeight: 24, fontWeight: '800', color: colors.text }, dayMealEmpty: { color: colors.textTertiary, fontWeight: '700' }, dayMeta: { ...typography.caption, color: colors.textSecondary }, dayAction: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayActionPlanned: { backgroundColor: colors.accentSoft },
+  dayList: { gap: 12 }, dayCard: { minHeight: 112, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, ...shadow }, dayCardToday: { borderColor: '#AFC8B6', backgroundColor: colors.surface }, dayDateBlock: { width: 58, height: 76, borderRadius: 18, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayDateBlockToday: { backgroundColor: colors.accent }, dayDateDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, dayDateDowToday: { color: '#DCEADF' }, dayDateNumber: { fontSize: 24, lineHeight: 28, fontWeight: '800', color: colors.text }, dayDateNumberToday: { color: '#FFFFFF' }, dayDateMonth: { fontSize: 10, lineHeight: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }, dayDateMonthToday: { color: '#DCEADF' }, dayCardContent: { flex: 1, gap: 5 }, dayTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }, dayName: { ...typography.caption, color: colors.textSecondary, fontWeight: '800' }, todayPill: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, overflow: 'hidden', fontWeight: '800' }, dayStatusPill: { fontSize: 10, lineHeight: 12, fontWeight: '800', paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.pill, overflow: 'hidden' }, dayStatusPlanned: { color: colors.accent, backgroundColor: colors.accentSoft }, dayStatusOpen: { color: colors.textTertiary, backgroundColor: colors.surfaceMuted }, dayMeal: { fontSize: 19, lineHeight: 24, fontWeight: '800', color: colors.text }, dayMealEmpty: { color: colors.textTertiary, fontWeight: '700' }, dayMeta: { ...typography.caption, color: colors.textSecondary }, dayAction: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayActionPlanned: { backgroundColor: colors.accentSoft },
   modalOverlay: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay }, bottomSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 26, position: 'absolute', left: 0, right: 0, bottom: 0 }, settingsSheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 12 }, editorSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, gap: 12 }, dayPickerSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 12 }, filterSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 16 }, sheetHandle: { width: 38, height: 5, borderRadius: 3, backgroundColor: colors.border, alignSelf: 'center', marginVertical: 10 }, sheetHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, sheetCancel: { ...typography.body, color: colors.textSecondary }, sheetTitle: { ...typography.title, color: colors.text }, sheetDone: { ...typography.bodyStrong, color: colors.accent }, pickerRow: { flexDirection: 'row', minHeight: 210 }, picker: { flex: 1 }, pickerItem: { color: colors.text, fontSize: 19 },
   settingsCard: { padding: 15, flexDirection: 'row', alignItems: 'center', gap: 12 }, settingsIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, settingsLabel: { ...typography.caption, color: colors.textSecondary }, settingsValue: { ...typography.bodyStrong, color: colors.text, marginTop: 2 }, settingsMeta: { ...typography.caption, color: colors.textTertiary, marginTop: 4 }, editorEyebrow: { ...typography.label, color: colors.accent }, editorTitle: { ...typography.h2, color: colors.text, marginBottom: 2 }, fieldLabel: { ...typography.bodyStrong, color: colors.text }, fieldHint: { ...typography.caption, color: colors.textSecondary }, largeInput: { minHeight: 54, borderRadius: radius.md, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 14, ...typography.body, color: colors.text },
   householdHero: { padding: 18, flexDirection: 'row', gap: 14, alignItems: 'center' }, householdIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, householdHeroLabel: { ...typography.label, color: colors.accent }, householdHeroTitle: { ...typography.h2, color: colors.text, marginTop: 2 }, householdHeroMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 4 }, memberRow: { minHeight: 66, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, avatar: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, avatarText: { ...typography.bodyStrong, color: colors.accent }, memberName: { ...typography.bodyStrong, color: colors.text }, memberMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 }, inviteCodeCard: { padding: 18, gap: 10 }, inviteCode: { fontSize: 30, letterSpacing: 4, fontWeight: '800', color: colors.text }, inviteCard: { padding: 14, flexDirection: 'row', gap: 10, alignItems: 'center' }, smallAction: { minWidth: 102 }, settingsBlock: { padding: 16, gap: 13 }, codeInput: { letterSpacing: 2, fontWeight: '700' },
@@ -511,4 +992,91 @@ const styles = StyleSheet.create({
   timeRow: { flexDirection: 'row', gap: 8 }, filterChip: { flex: 1, minHeight: 42, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, filterChipActive: { backgroundColor: colors.accent }, filterChipText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, filterChipTextActive: { color: '#FFFFFF' }, switchRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12 },
   fullModalHeader: { paddingHorizontal: 18, paddingTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fullModalTitle: { ...typography.title, color: colors.text }, formContent: { padding: 18, paddingBottom: 40, gap: 18 }, formInput: { minHeight: 52, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, ...typography.body, color: colors.text }, multilineInput: { minHeight: 130 }, servingsInput: { maxWidth: 110 }, recipeDetailContent: { minHeight: '100%', backgroundColor: colors.background, padding: 18, paddingBottom: 44, gap: 16 }, detailTopbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, detailImage: { width: '100%', height: 250, borderRadius: radius.xl, backgroundColor: colors.surfaceMuted }, detailPlaceholder: { width: '100%', height: 190, borderRadius: radius.xl, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, detailSource: { ...typography.label, color: colors.accent }, detailTitle: { ...typography.h1, color: colors.text }, detailMeta: { ...typography.body, color: colors.textSecondary }, detailBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, metaBadge: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 9, paddingVertical: 5, borderRadius: radius.pill, overflow: 'hidden' }, ingredientsCard: { padding: 15, gap: 12 }, ingredientRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 }, ingredientDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.accent, marginTop: 8 }, ingredientText: { ...typography.body, color: colors.text, flex: 1 }, instructionsCard: { padding: 16 }, instructionsText: { ...typography.body, color: colors.textSecondary }, dayPickerTitle: { ...typography.h2, color: colors.text, marginBottom: 4 }, dayPickerGrid: { gap: 8 }, dayPickerButton: { minHeight: 48, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, justifyContent: 'center', paddingHorizontal: 15 }, dayPickerButtonText: { ...typography.bodyStrong, color: colors.text },
   tabBar: { height: 64, flexDirection: 'row', backgroundColor: colors.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingHorizontal: 6 }, tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 }, tabLabel: { fontSize: 11, lineHeight: 14, fontWeight: '600', color: colors.textTertiary }, tabLabelActive: { color: colors.accent }, loadingScreen: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 }, configurationTitle: { ...typography.h2, color: colors.text, textAlign: 'center' }, configurationText: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
-});
+
+  settingsSheetV214: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 18, position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '90%', gap: 10, overflow: 'hidden' },
+  settingsScrollContent: { gap: 12, paddingBottom: 18 },
+  settingsSectionTitle: { ...typography.label, color: colors.textTertiary, marginTop: 8 },
+  themeSegmentRow: { flexDirection: 'row', gap: 8 },
+  themeSegment: { flex: 1, minHeight: 58, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', gap: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  themeSegmentActive: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+  themeSegmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
+  themeSegmentTextActive: { color: colors.accent },
+  preferenceRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  preferenceDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+  startTabRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  startTabChip: { minHeight: 38, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  startTabChipActive: { backgroundColor: colors.accent },
+  startTabChipText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
+  startTabChipTextActive: { color: '#FFFFFF' },
+
+  shoppingToolbar: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  shoppingToolbarLabel: { ...typography.label, color: colors.textTertiary },
+  shoppingToolbarTitle: { ...typography.title, color: colors.text, marginTop: 2 },
+  shoppingAddButton: { minHeight: 46, paddingHorizontal: 15, borderRadius: radius.md, backgroundColor: colors.accent, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  shoppingAddButtonText: { ...typography.bodyStrong, color: '#FFFFFF' },
+  shoppingRowV214: { minHeight: 64, paddingHorizontal: 13, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  shoppingRowCompact: { minHeight: 54, paddingVertical: 6 },
+  shoppingMetaTiny: { fontSize: 11, lineHeight: 15, color: colors.textTertiary, marginTop: 1 },
+  swipeRowClip: { position: 'relative', overflow: 'hidden', backgroundColor: colors.danger },
+  swipeDeleteBack: { ...StyleSheet.absoluteFill, paddingRight: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5, backgroundColor: colors.danger },
+  swipeDeleteText: { ...typography.caption, color: '#FFFFFF', fontWeight: '800' },
+  swipeHint: { ...typography.caption, color: colors.textTertiary, textAlign: 'center', marginTop: -4 },
+  shoppingAddSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 22, gap: 13, width: '100%', maxHeight: '72%', overflow: 'hidden' },
+  shoppingSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  voiceInputShell: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: radius.md, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingLeft: 14, paddingRight: 8 },
+  voiceProductInput: { flex: 1, ...typography.body, color: colors.text, paddingVertical: 12 },
+  micButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  micButtonActive: { backgroundColor: colors.accent },
+  listeningText: { ...typography.caption, color: colors.accent, marginTop: -7 },
+  suggestionBox: { borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, overflow: 'hidden' },
+  suggestionRow: { minHeight: 39, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: colors.surfaceMuted, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  suggestionText: { ...typography.body, color: colors.text },
+  quantityControlRow: { minHeight: 58, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  quantityValue: { ...typography.h2, color: colors.text, marginTop: 1 },
+  quantityButtons: { flexDirection: 'row', gap: 8 },
+  quantityRoundButton: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  unitChips: { gap: 7, paddingRight: 4 },
+  unitChip: { height: 38, minWidth: 50, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  unitChipActive: { backgroundColor: colors.accent },
+  unitChipText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
+  unitChipTextActive: { color: '#FFFFFF' },
+  undoBar: { position: 'absolute', left: 16, right: 16, bottom: 14, minHeight: 52, paddingHorizontal: 16, borderRadius: radius.md, backgroundColor: colors.text, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  undoText: { ...typography.caption, color: colors.background, flex: 1 },
+  undoAction: { ...typography.bodyStrong, color: colors.accentStrong },
+
+  recipeWizardHeaderText: { flex: 1, alignItems: 'center' },
+  recipeWizardStep: { ...typography.caption, color: colors.textTertiary },
+  recipeWizardProgress: { flexDirection: 'row', gap: 6, paddingHorizontal: 18, paddingBottom: 8 },
+  recipeWizardProgressPart: { flex: 1, height: 4, borderRadius: 3, backgroundColor: colors.surfaceMuted },
+  recipeWizardProgressPartActive: { backgroundColor: colors.accent },
+  recipeWizardContent: { padding: 20, gap: 20, paddingBottom: 32 },
+  recipeWizardEyebrow: { ...typography.label, color: colors.accent },
+  recipeWizardTitle: { ...typography.h1, color: colors.text, marginTop: 5 },
+  recipeWizardSubtitle: { ...typography.body, color: colors.textSecondary, marginTop: 5 },
+  servingSelector: { alignSelf: 'flex-start', minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 6, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
+  servingValue: { minWidth: 34, ...typography.h2, color: colors.text, textAlign: 'center' },
+  ingredientAddRow: { flexDirection: 'row', gap: 9 },
+  ingredientAddInput: { flex: 1, minHeight: 52, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 14, ...typography.body, color: colors.text },
+  ingredientAddButton: { width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  ingredientQuickRow: { gap: 7, paddingRight: 4 },
+  ingredientQuickChip: { minHeight: 37, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  ingredientQuickText: { ...typography.caption, color: colors.accent, fontWeight: '700' },
+  ingredientEditorCard: { overflow: 'hidden' },
+  ingredientEditorRow: { minHeight: 58, paddingLeft: 12, paddingRight: 6, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  ingredientNumber: { width: 28, height: 28, borderRadius: 10, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  ingredientNumberText: { ...typography.caption, color: colors.accent, fontWeight: '800' },
+  ingredientEditorText: { flex: 1, ...typography.body, color: colors.text },
+  recipeInstructionsInput: { minHeight: 180, paddingTop: 14 },
+  recipeSummaryCard: { padding: 15, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  recipeWizardFooter: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 18, flexDirection: 'row', gap: 10, backgroundColor: colors.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+
+  });
+}
+
+let styles = createStyles();
+
+function refreshAppStyles() {
+  styles = createStyles();
+  refreshUiComponentStyles();
+}
+

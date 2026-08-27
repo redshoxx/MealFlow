@@ -34,6 +34,8 @@ export type ShoppingItem = {
   completedBy?: string | null;
   completedByName?: string | null;
   completedAt?: string | null;
+  addedBy?: string | null;
+  addedByName?: string | null;
 };
 
 export type MealDay = { day: string; meal: string | null };
@@ -59,6 +61,7 @@ export type MealHistoryEntry = {
 
 type ShoppingRow = {
   id: string;
+  owner_id?: string | null;
   name: string;
   amount: number | string;
   unit: string;
@@ -232,6 +235,8 @@ function toShoppingItem(row: ShoppingRow, names?: Map<string, string>): Shopping
     completedBy: row.completed_by ?? null,
     completedByName: row.completed_by ? names?.get(row.completed_by) ?? 'Mitglied' : null,
     completedAt: row.completed_at ?? null,
+    addedBy: row.owner_id ?? null,
+    addedByName: row.owner_id ? names?.get(row.owner_id) ?? 'Mitglied' : null,
   };
 }
 
@@ -250,25 +255,26 @@ export async function loadShopping(): Promise<ShoppingItem[]> {
   const householdId = await getActiveHouseholdId();
   const { data, error } = await supabase
     .from('shopping_items')
-    .select('id,name,amount,unit,done,completed_by,completed_at')
+    .select('id,owner_id,name,amount,unit,done,completed_by,completed_at')
     .eq('household_id', householdId)
     .order('created_at', { ascending: false });
   if (error) throw error;
   const rows = (data ?? []) as ShoppingRow[];
-  const names = await loadProfileNames(rows.map((row) => row.completed_by ?? '').filter(Boolean));
+  const names = await loadProfileNames(rows.flatMap((row) => [row.completed_by ?? '', row.owner_id ?? '']).filter(Boolean));
   return rows.map((row) => toShoppingItem(row, names));
 }
 
-export async function addShoppingItem(item: Omit<ShoppingItem, 'id' | 'done' | 'completedBy' | 'completedByName' | 'completedAt'>) {
+export async function addShoppingItem(item: Omit<ShoppingItem, 'id' | 'done' | 'completedBy' | 'completedByName' | 'completedAt' | 'addedBy' | 'addedByName'>) {
   const householdId = await getActiveHouseholdId();
   const user = await requireUser();
   const { data, error } = await requireCloud()
     .from('shopping_items')
     .insert({ household_id: householdId, owner_id: user.id, name: item.name, amount: item.amount, unit: item.unit, done: false })
-    .select('id,name,amount,unit,done,completed_by,completed_at')
+    .select('id,owner_id,name,amount,unit,done,completed_by,completed_at')
     .single();
   if (error) throw error;
-  return toShoppingItem(data as ShoppingRow);
+  const names = await loadProfileNames([user.id]);
+  return toShoppingItem(data as ShoppingRow, names);
 }
 
 export async function setShoppingDone(id: string, done: boolean) {
