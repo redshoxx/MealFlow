@@ -3,7 +3,15 @@ name: Build Android APK
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - source.json
+      - README.md
+      - supabase/migrations/**
   workflow_dispatch:
+
+concurrency:
+  group: mealflow-android-apk
+  cancel-in-progress: true
 
 jobs:
   build-apk:
@@ -29,6 +37,9 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Generate app icon
+        run: npm run generate:icon
 
       - name: Generate Android project
         run: npx expo prebuild --platform android --clean --no-install

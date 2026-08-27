@@ -1,91 +1,58 @@
-# MealFlow 1.3
+# MealFlow 2.1
 
-MealFlow ist eine gemeinsame iPhone-/Android-App für Abendessen-Wochenplanung, Einkaufsliste mit Mengen und Einheiten sowie Rezeptsuche aus dem Internet.
+MealFlow ist eine deutschsprachige iPhone-/Android-App für gemeinsame Abendessenplanung, Einkauf und Rezepte. Die App ist auf iPhone 12 optimiert, nutzt Supabase für Auth/PostgreSQL/Realtime und wird als SideStore-IPA sowie signierte Android-APK gebaut.
 
-## Plattformen
+## Neu in 2.1
 
-- iPhone: IPA für SideStore
-- Android: signierte, installierbare APK
-- Gemeinsame Cloud-Synchronisierung über Supabase
-- Supabase Auth + PostgreSQL + Realtime
-- Optimiert für iPhone 12 und responsiv für Android
-- Keine Alexa-Integration
+### Gemeinsame Haushalte
+- jeder Account startet mit einem privaten Haushalt
+- gemeinsame Einkaufsliste, Wochenplan und eigene Rezepte über `household_id`
+- Mitglieder und Rollen (`owner`, `admin`, `member`)
+- Beitritt per Haushaltscode
+- E-Mail-Einladungen mit 14 Tage gültigem Einladungscode
+- aktiver Haushalt wird pro Profil gespeichert
+- bestehende Einzeluser-Daten werden beim Upgrade automatisch in den persönlichen Haushalt übernommen
+- bei erledigten Einkaufsartikeln werden `completed_by` und `completed_at` gespeichert; die App zeigt den Namen der Person an
+- alle Haushaltsdaten bleiben durch Supabase RLS getrennt
 
-## Funktionen
+### Rezeptsuche für AT/DE
+- TheMealDB als externe Quelle
+- zusätzliche eigene `recipe_catalog`-Datenbank mit österreichischen/deutschen Startgerichten
+- Filter nach maximaler Zeit, vegetarisch und vorhandener Zutat
+- Schalter „Nicht wieder diese Woche“ blendet bereits geplante Gerichte aus
+- Kochverlauf über `meal_history`; auf Rezeptkarten wird „zuletzt gekocht“ angezeigt
+- saisonale Quick-Search-Begriffe, u. a. Schnitzel, Knödel, Eintopf, Ofengemüse, Kürbis und Eierschwammerl
 
-- Wochenplan Montag bis Sonntag, bewusst nur für Abendessen
-- Einkaufsliste mit Produkt, Menge und Einheit
-- Einheiten u. a. Stk., Pkg., g, kg, ml, l, EL, TL, Bund und Dose
-- iOS-artiger Mengen-/Einheiten-Picker
-- Artikel abhaken und löschen
-- Rezeptsuche aus dem Internet über TheMealDB
-- Rezeptdetails mit Zutaten
-- Rezeptzutaten direkt auf die Einkaufsliste übernehmen
-- Rezept direkt in den Wochenplan übernehmen
-- Supabase E-Mail-/Passwort-Login
-- Realtime-Synchronisierung zwischen iPhone und Android
+### Neues App-Icon
+Das App-Icon wird deterministisch aus `scripts/generate-app-icon.cjs` erzeugt und über `app.config.js` in iOS und Android eingebunden. Dadurch liegt kein manuell gepflegtes Binär-Asset im Repository und beide Plattformen erhalten dasselbe Markenbild.
+
+## Navigation
+- **Heute** – heutiges Abendessen, Haushalt, offene Einkäufe und „Als gekocht markieren“
+- **Woche** – Montag bis Sonntag, nur Abendessen
+- **Einkauf** – gemeinsame Realtime-Liste mit Menge, Einheit und „erledigt von …“
+- **Rezepte** – AT/DE-Katalog, Online-Suche, Filter und gemeinsame eigene Rezepte
+- **Konto & Einstellungen** – Haushalt, Mitglieder, Einladen und Profil
 
 ## Supabase
+Die Mobile-App verwendet ausschließlich `EXPO_PUBLIC_SUPABASE_URL` und den Publishable Key. Secret-/Service-Role-Keys gehören niemals in die App.
 
-Das aktuell verbundene Supabase-Projekt wird über `EXPO_PUBLIC_SUPABASE_URL` und `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` angesprochen.
+Migrationen:
+- `supabase/migrations/202608271210_create_mealflow_core.sql`
+- `supabase/migrations/202608271245_add_custom_recipes.sql`
+- `supabase/migrations/202608271315_mealflow_2_1_households_recipes_history.sql`
 
-Die Tabellen `shopping_items` und `meal_plan` sind mit Row Level Security geschützt. Jeder Benutzer sieht und verändert nur Datensätze, deren `owner_id` seiner Supabase-User-ID entspricht.
-
-Die Migration liegt unter:
-
-`supabase/migrations/202608271210_create_mealflow_core.sql`
-
-Wichtig: Ein `SUPABASE_SECRET_KEY` gehört niemals in die Mobile-App, `.env.example`, GitHub Actions oder das Repository.
+RLS ist für Haushalte, Profile, Mitglieder, Einladungen, Einkauf, Wochenplan, eigene Rezepte und Kochverlauf aktiviert.
 
 ## Lokaler Start
-
-Voraussetzung: Node.js 22+
-
 ```bash
 npm install
 npm run typecheck
 npx expo start
 ```
 
-## Android APK
+## Builds
+- Android: `.github/workflows/build-android-apk.yml` → signierte `MealFlow-Android.apk`
+- iOS: `.github/workflows/build-ios-sidestore.yml` → `MealFlow-SideStore.ipa`
+- SideStore Source: `https://raw.githubusercontent.com/redshoxx/MealFlow/main/source.json`
 
-Der Workflow **Build Android APK** erzeugt eine signierte Sideload-APK und verifiziert die APK-Signatur.
-
-Ergebnis: `MealFlow-Android.apk`
-
-## iPhone / SideStore
-
-Der Workflow **Build iOS IPA for SideStore** baut bei relevanten Änderungen auf `main` automatisch eine neue SideStore-IPA.
-
-Dabei passiert automatisch:
-
-1. eine eindeutige iOS-Buildnummer wird vergeben,
-2. `MealFlow-SideStore.ipa` wird gebaut,
-3. ein GitHub Release wird erstellt,
-4. `source.json` wird mit der neuen Version aktualisiert.
-
-SideStore Source:
-
-`https://raw.githubusercontent.com/redshoxx/MealFlow/main/source.json`
-
-Diese Source muss auf dem iPhone nur einmal in SideStore hinzugefügt werden. Danach kann SideStore neue MealFlow-Versionen anhand von `version` und `buildVersion` erkennen und als Update anbieten.
-
-Hinweis: SideStores automatischer App-Refresh erneuert die 7-Tage-Signatur. Ein neues App-Binary wird aus Sicherheits-/iOS-Gründen nicht garantiert vollständig unbeaufsichtigt installiert; verfügbare MealFlow-Updates werden über die Source erkannt und können in SideStore aktualisiert werden.
-
-## Wichtige Projektdateien
-
-- `App.tsx` – Mobile UI und App-Logik
-- `src/lib/supabase.ts` – Supabase Client und Auth-Session
-- `src/lib/cloud.ts` – PostgreSQL-Datenzugriff für Einkaufsliste und Wochenplan
-- `src/lib/recipes.ts` – Internet-Rezeptsuche
-- `supabase/migrations/202608271210_create_mealflow_core.sql` – Datenbankschema, RLS und Realtime
-- `.github/workflows/build-android-apk.yml` – APK Build
-- `.github/workflows/build-ios-sidestore.yml` – SideStore IPA Build + automatische Releases
-- `source.json` – SideStore/AltStore Update-Feed
-
-## Sicherheit
-
-- Nur der öffentliche Supabase Publishable Key wird im Mobile-Client verwendet
-- Kein Secret Key im Repository
-- Row Level Security ist für beide Tabellen aktiviert
-- Datenzugriffe sind an `auth.uid()` gebunden
+Der iOS-Workflow veröffentlicht neue Builds automatisch als GitHub Release und aktualisiert `source.json`, damit SideStore neue Versionen als Update erkennt.

@@ -6,10 +6,15 @@ on:
     paths-ignore:
       - source.json
       - README.md
+      - supabase/migrations/**
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: mealflow-sidestore-release
+  cancel-in-progress: true
 
 jobs:
   build-ipa:
@@ -48,6 +53,9 @@ jobs:
           echo "build=$BUILD_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Generate app icon
+        run: npm run generate:icon
+
       - name: Generate iOS project
         run: npx expo prebuild --platform ios --clean --no-install
 
@@ -76,7 +84,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/Payload" release
           cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
           (cd "$RUNNER_TEMP" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/release/MealFlow-SideStore.ipa" Payload)
+          cp assets/icon.png release/MealFlow-AppIcon.png
           test -f release/MealFlow-SideStore.ipa
+          test -f release/MealFlow-AppIcon.png
 
           INFO_PLIST="$APP_PATH/Info.plist"
           ACTUAL_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")
@@ -88,7 +98,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MealFlow-SideStore-IPA
-          path: release/MealFlow-SideStore.ipa
+          path: |
+            release/MealFlow-SideStore.ipa
+            release/MealFlow-AppIcon.png
           if-no-files-found: error
 
       - name: Publish GitHub release
@@ -98,6 +110,7 @@ jobs:
           TAG="${{ steps.meta.outputs.tag }}"
           gh release create "$TAG" \
             release/MealFlow-SideStore.ipa \
+            release/MealFlow-AppIcon.png \
             --target "$GITHUB_SHA" \
             --title "MealFlow ${{ steps.meta.outputs.version }} (Build ${{ steps.meta.outputs.build }})" \
             --notes "Automatischer SideStore Build aus main." \
@@ -108,32 +121,33 @@ jobs:
           IPA_SIZE=$(stat -f%z release/MealFlow-SideStore.ipa)
           RELEASE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           DOWNLOAD_URL="https://github.com/redshoxx/MealFlow/releases/download/${{ steps.meta.outputs.tag }}/MealFlow-SideStore.ipa"
+          ICON_URL="https://github.com/redshoxx/MealFlow/releases/download/${{ steps.meta.outputs.tag }}/MealFlow-AppIcon.png"
 
           cat > source.json <<EOF
           {
             "name": "MealFlow",
             "subtitle": "Automatische SideStore Updates für MealFlow",
             "description": "Offizielle MealFlow SideStore Source. Neue Builds werden automatisch über GitHub Releases veröffentlicht.",
-            "iconURL": "https://github.com/redshoxx.png",
+            "iconURL": "$ICON_URL",
             "website": "https://github.com/redshoxx/MealFlow",
-            "tintColor": "#79C843",
+            "tintColor": "#2F6B45",
             "featuredApps": ["at.mealflow.app"],
             "apps": [
               {
                 "name": "MealFlow",
                 "bundleIdentifier": "at.mealflow.app",
                 "developerName": "redshoxx",
-                "subtitle": "Wochenplan, Einkaufsliste und Rezepte",
-                "localizedDescription": "MealFlow verbindet deinen Abendessen-Wochenplan, deine Einkaufsliste und Rezeptsuche auf iPhone und Android.",
-                "iconURL": "https://github.com/redshoxx.png",
-                "tintColor": "#79C843",
+                "subtitle": "Gemeinsam planen, einkaufen und kochen",
+                "localizedDescription": "MealFlow verbindet den gemeinsamen Abendessen-Wochenplan, die Einkaufsliste und Rezepte für deinen Haushalt auf iPhone und Android.",
+                "iconURL": "$ICON_URL",
+                "tintColor": "#2F6B45",
                 "category": "lifestyle",
                 "versions": [
                   {
                     "version": "${{ steps.meta.outputs.version }}",
                     "buildVersion": "${{ steps.meta.outputs.build }}",
                     "date": "$RELEASE_DATE",
-                    "localizedDescription": "Automatisches MealFlow Update aus GitHub.",
+                    "localizedDescription": "MealFlow ${{ steps.meta.outputs.version }} – automatisches SideStore Update aus GitHub.",
                     "downloadURL": "$DOWNLOAD_URL",
                     "size": $IPA_SIZE
                   }
