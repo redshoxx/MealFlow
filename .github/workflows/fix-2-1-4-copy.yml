@@ -1,0 +1,44 @@
+name: Clean MealFlow 2.1.4 recipe copy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-2-1-4-copy.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Clean old recipe wording
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('App.tsx')
+          s=p.read_text()
+          s=s.replace('AT/DE-Ideen, Filter und Kochverlauf nutzen.', 'Beliebte Web-Rezepte, Filter und Kochverlauf nutzen.')
+          s=s.replace('MealFlow AT/DE + TheMealDB', 'Online-Rezepte + TheMealDB')
+          s=s.replace('MealFlow AT/DE', 'Online-Rezepte')
+          p.write_text(s)
+          PY
+          npm install --ignore-scripts
+          npm run typecheck
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-2-1-4-copy.yml
+          git add App.tsx
+          git commit -m "Polish MealFlow 2.1.4 recipe wording"
+          git pull --rebase origin main
+          git push origin main
