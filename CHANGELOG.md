@@ -1,5 +1,26 @@
 # MealFlow Changelog
 
+## 2.1.4
+
+- Beliebte Internet-Rezepte ersetzen den festen AT/DE-Katalog in der Entdecken-Ansicht.
+- „Unsere Rezepte“ ist ein vereinfachter 3-Schritte-Assistent mit einzeln hinzufügbaren Zutaten.
+- iOS-Wischgeste zum Zurückgehen in Vollbild-Ansichten und im Rezept-Assistenten.
+- Kompaktere Einkaufsliste mit „von …“ für den Ersteller und „erledigt von …“.
+- Löschen in der Einkaufsliste per Wischgeste mit Rückgängig-Funktion.
+- Produkt-Hinzufügen als iOS-artiges Bottom Sheet statt dauerhaftem Formular.
+- Produktvorschläge während der Eingabe, z. B. „Mil…“ → „Milch“.
+- Produkte per deutscher Spracherkennung hinzufügen.
+- Erscheinungsbild: System, Hell oder Dunkel.
+- Individuelle Einstellungen für Startseite, Haptik und Einkaufsliste.
+- App-Version wird direkt aus der tatsächlichen App-Konfiguration angezeigt.
+- Reduzierte Schatten und optimierte Sheet-/Formular-Darstellung.
+- Performance-, TypeScript- und allgemeine Stabilitätsoptimierungen.
+
+## 2.1.3
+
+- Wochenplan als übersichtliches Abendessen-Dashboard überarbeitet.
+- Datumsbereich, Planungsfortschritt, Heute-Hervorhebung und größere Tageskarten.
+
 ## 2.1.2
 
 - Web-Rezeptsuche bevorzugt das Originalbild der gefundenen Rezeptseite.
@@ -17,4 +38,4 @@
 ## 2.1.0
 
 - Gemeinsame Haushalte, Einladungen, Realtime-Einkaufsliste und gemeinsamer Wochenplan.
-- Erweiterte AT/DE-Rezeptfunktionen und Kochverlauf.
+- Erweiterte Rezeptfunktionen und Kochverlauf.
