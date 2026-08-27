@@ -2,21 +2,21 @@
   "expo": {
     "name": "MealFlow",
     "slug": "mealflow",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "at.mealflow.app",
-      "buildNumber": "5"
+      "buildNumber": "6"
     },
     "android": {
       "package": "at.mealflow.app",
       "adaptiveIcon": {
-        "backgroundColor": "#F6F7F4"
+        "backgroundColor": "#214F33"
       },
-      "versionCode": 5
+      "versionCode": 6
     },
     "plugins": [
       "expo-sqlite"
