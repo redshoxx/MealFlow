@@ -1,5 +1,13 @@
 # MealFlow Changelog
 
+## 2.2.4
+
+- Absturz beim Löschen von Produkten in der Einkaufsliste behoben.
+- Die instabile Swipe-/Animated-Löschung wurde vollständig entfernt.
+- Offene und erledigte Produkte haben jetzt rechts einen kleinen Papierkorb-Button.
+- Rückgängig-Funktion nach dem Löschen bleibt erhalten.
+- Version 2.2.4, iOS Build 16, Android Version Code 16.
+
 ## 2.2.3
 
 - Android Auto-Updater: prüft beim Start automatisch das offizielle MealFlow-Update-Manifest, lädt neue APKs direkt von GitHub Releases und öffnet anschließend den Android-Installer.
@@ -72,7 +80,7 @@
 ## 2.1.4
 
 - Beliebte Internet-Rezepte ersetzen den festen AT/DE-Katalog in der Entdecken-Ansicht.
-- „Unsere Rezepte“ ist ein vereinfachter 3-Schritte-Assistent mit einzeln hinzufügbaren Zutaten.
+- „Unsere Rezepte“ ist ein vereinfachter 3-Schritte-Assistent mit einzeln hinzuzufügenden Zutaten.
 - iOS-Wischgeste zum Zurückgehen in Vollbild-Ansichten und im Rezept-Assistenten.
 - Kompaktere Einkaufsliste mit „von …“ für den Ersteller und „erledigt von …“.
 - Löschen in der Einkaufsliste per Wischgeste mit Rückgängig-Funktion.
