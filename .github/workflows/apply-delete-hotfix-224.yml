@@ -1,0 +1,44 @@
+name: Apply MealFlow 2.2.4 Delete Hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-delete-hotfix-224.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apply delete hotfix
+        run: python3 scripts/apply-delete-hotfix-224.py
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit verified hotfix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add App.tsx app.json package.json package-lock.json
+          git commit -m "Fix product deletion crash in MealFlow 2.2.4"
+          git pull --rebase origin main
+          git push origin main
