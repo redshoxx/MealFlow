@@ -1,0 +1,99 @@
+name: Apply MealFlow 2.1.2 recipe image fallback
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/patch-2-1-2-recipe-image-fallback.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Patch recipe image rendering
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('App.tsx')
+          text = path.read_text()
+
+          anchor = "  return `Zuletzt am ${date.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}`;\n}\n\nfunction AuthScreen()"
+          insert = """  return `Zuletzt am ${date.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}`;
+}
+
+function RecipeArtwork({ recipe, variant }: { recipe: Recipe; variant: 'card' | 'detail' }) {
+  const [uri, setUri] = useState(recipe.image);
+  useEffect(() => { setUri(recipe.image); }, [recipe.image, recipe.imageFallback]);
+
+  const handleError = () => {
+    if (uri && recipe.imageFallback && uri !== recipe.imageFallback) {
+      setUri(recipe.imageFallback);
+      return;
+    }
+    setUri(undefined);
+  };
+
+  const imageStyle = variant === 'detail' ? styles.detailImage : styles.recipeImage;
+  const placeholderStyle = variant === 'detail' ? styles.detailPlaceholder : styles.recipeImagePlaceholder;
+  const iconSize = variant === 'detail' ? 42 : 28;
+
+  if (!uri) {
+    return <View style={placeholderStyle}><MaterialCommunityIcons name={recipe.sourceKind === 'mealflow' ? 'silverware-fork-knife' : 'chef-hat'} size={iconSize} color={colors.accent} /></View>;
+  }
+
+  return <Image source={{ uri }} style={imageStyle} resizeMode="cover" onError={handleError} accessibilityLabel={`Bild zu ${recipe.title}`} />;
+}
+
+function AuthScreen()"""
+          if anchor not in text:
+            raise SystemExit('Could not find RecipeArtwork insertion anchor')
+          text = text.replace(anchor, insert, 1)
+
+          old_detail = "{recipe?.image ? <Image source={{ uri: recipe.image }} style={styles.detailImage} resizeMode=\"cover\" /> : <View style={styles.detailPlaceholder}><MaterialCommunityIcons name=\"chef-hat\" size={42} color={colors.accent} /></View>}"
+          new_detail = "{recipe ? <RecipeArtwork recipe={recipe} variant=\"detail\" /> : <View style={styles.detailPlaceholder}><MaterialCommunityIcons name=\"chef-hat\" size={42} color={colors.accent} /></View>}"
+          if old_detail not in text:
+            raise SystemExit('Could not find recipe detail image expression')
+          text = text.replace(old_detail, new_detail, 1)
+
+          old_card = "{recipe.image ? <Image source={{ uri: recipe.image }} style={styles.recipeImage} resizeMode=\"cover\" /> : <View style={styles.recipeImagePlaceholder}><MaterialCommunityIcons name={recipe.sourceKind === 'mealflow' ? 'silverware-fork-knife' : 'chef-hat'} size={28} color={colors.accent} /></View>}"
+          new_card = "<RecipeArtwork recipe={recipe} variant=\"card\" />"
+          if old_card not in text:
+            raise SystemExit('Could not find recipe card image expression')
+          text = text.replace(old_card, new_card, 1)
+
+          old_hint = "Web-Rezeptsuche + MealFlow AT/DE + TheMealDB · beim Scrollen werden weitere Treffer geladen"
+          new_hint = "Web-Rezeptsuche mit Originalbildern + MealFlow AT/DE + TheMealDB · beim Scrollen werden weitere Treffer geladen"
+          if old_hint in text:
+            text = text.replace(old_hint, new_hint, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit final 2.1.2 patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/patch-2-1-2-recipe-image-fallback.yml
+          git add App.tsx
+          git commit -m "Finish MealFlow 2.1.2 recipe image fallback"
+          git pull --rebase origin main
+          git push origin main
