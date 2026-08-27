@@ -1,84 +1,31 @@
-// Temporary UI compatibility bridge. This file does not use Supabase.
-// It maps the existing UI auth/realtime calls to Appwrite while the UI is refactored.
-import { hasActiveSession, isCloudConfigured, signIn, signOut, signUp } from './appwrite';
-import { subscribeToCloudChanges } from './cloud';
+import 'react-native-url-polyfill/auto';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
+import { createClient } from '@supabase/supabase-js';
 
-type AuthListener = (event: string, session: object | null) => void;
-const listeners = new Set<AuthListener>();
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? 'https://yvixyvuqhaalwqapaqtb.supabase.co';
+const supabasePublishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? 'sb_publishable_PYwigeZc62bsOlQcXzbshQ_h9mZJvkc';
 
-function emit(event: string, authenticated: boolean) {
-  const session = authenticated ? {} : null;
-  listeners.forEach((listener) => listener(event, session));
-}
+export const isCloudConfigured = Boolean(supabaseUrl && supabasePublishableKey);
 
-class AppwriteChannelBridge {
-  private callbacks: Array<() => void> = [];
-  private cleanup: null | (() => Promise<void>) = null;
-
-  on(_event: string, _filter: unknown, callback: () => void) {
-    this.callbacks.push(callback);
-    return this;
-  }
-
-  subscribe() {
-    subscribeToCloudChanges(() => this.callbacks.forEach((callback) => callback()))
-      .then((cleanup) => { this.cleanup = cleanup; })
-      .catch(() => undefined);
-    return this;
-  }
-
-  async close() {
-    await this.cleanup?.();
-  }
-}
-
-export { isCloudConfigured };
-
-export const supabase = isCloudConfigured ? {
+export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
   auth: {
-    async signInWithPassword({ email, password }: { email: string; password: string }) {
-      try {
-        await signIn(email, password);
-        emit('SIGNED_IN', true);
-        return { data: { session: {} }, error: null };
-      } catch (error) {
-        return { data: { session: null }, error };
-      }
-    },
-    async signUp({ email, password }: { email: string; password: string }) {
-      try {
-        await signUp(email, password);
-        emit('SIGNED_IN', true);
-        return { data: { session: {} }, error: null };
-      } catch (error) {
-        return { data: { session: null }, error };
-      }
-    },
-    async getSession() {
-      const active = await hasActiveSession();
-      return { data: { session: active ? {} : null } };
-    },
-    onAuthStateChange(callback: AuthListener) {
-      listeners.add(callback);
-      return {
-        data: {
-          subscription: {
-            unsubscribe: () => {
-              listeners.delete(callback);
-            },
-          },
-        },
-      };
-    },
-    async signOut() {
-      await signOut();
-      emit('SIGNED_OUT', false);
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
     },
   },
-  channel(_name: string) {
-    return new AppwriteChannelBridge();
-  },
-  async removeChannel(channel: AppwriteChannelBridge) {
-    await channel.close();
-  },
-} : null;
+});
+
+AppState.addEventListener('change', (state) => {
+  if (state === 'active') {
+    supabase.auth.startAutoRefresh();
+  } else {
+    supabase.auth.stopAutoRefresh();
+  }
+});
