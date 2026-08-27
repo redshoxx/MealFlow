@@ -1,6 +1,6 @@
 {
   "name": "mealflow",
-  "version": "2.1.5",
+  "version": "2.2.0",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
@@ -20,6 +20,7 @@
     "@react-native-picker/picker": "2.11.4",
     "@supabase/supabase-js": "2.57.4",
     "expo": "57.0.17",
+    "expo-camera": "57.0.4",
     "expo-haptics": "57.0.1",
     "expo-speech-recognition": "56.0.3",
     "expo-sqlite": "57.0.1",
