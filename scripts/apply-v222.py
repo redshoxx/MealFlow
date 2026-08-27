@@ -1,0 +1,212 @@
+from pathlib import Path
+import json
+
+p = Path('App.tsx')
+s = p.read_text()
+
+anchor = "import { InventoryScreen, refreshInventoryStyles } from './src/screens/InventoryScreen';"
+if "./src/lib/expiryNotifications" not in s:
+    if anchor not in s:
+        raise SystemExit('inventory import missing')
+    s = s.replace(anchor, anchor + "\nimport { loadPantry, type PantryItem } from './src/lib/inventory';\nimport { getUrgentPantry, syncExpiryNotifications } from './src/lib/expiryNotifications';", 1)
+
+loading_start = s.index('function LoadingScreen(')
+loading_end = s.index('function RecipeArtwork(', loading_start)
+s = s[:loading_start] + '''function LoadingScreen({ message = 'MealFlow wird vorbereitet …', progress = 0 }: { message?: string; progress?: number }) {
+  const safeProgress = Math.max(0, Math.min(100, Math.round(progress)));
+  return <View style={styles.loadingScreen}><View style={styles.loadingLogo}><MaterialCommunityIcons name="silverware-fork-knife" size={30} color="#FFFFFF" /></View><Text style={styles.loadingBrand}>MealFlow</Text><Text style={styles.loadingMessage}>{message}</Text><View style={styles.loadingProgress}><View style={[styles.loadingProgressFill, { width: `${safeProgress}%` as `${number}%` }]} /></View><Text style={styles.loadingPercent}>{safeProgress}%</Text><Text style={styles.loadingHint}>Haushalt · Einkauf · Woche · Vorrat</Text></View>;
+}
+
+''' + s[loading_end:]
+
+if 'function parseSpokenShopping' not in s:
+    parser_at = s.index('function getCurrentDay()')
+    parser = '''function parseSpokenShopping(value: string) {
+  const clean = value.trim().replace(/\\s+/g, ' ');
+  if (!clean) return { name: '' } as { name: string; amount?: number; unit?: string };
+  const numberWords: Record<string, number> = { ein: 1, eine: 1, einen: 1, eins: 1, zwei: 2, drei: 3, vier: 4, fünf: 5, fuenf: 5, sechs: 6, sieben: 7, acht: 8, neun: 9, zehn: 10, halb: 0.5 };
+  const firstMatch = clean.match(/^([^ ]+)\\s+(.+)$/);
+  if (!firstMatch) return { name: clean };
+  const amountToken = firstMatch[1].toLocaleLowerCase('de-AT');
+  const numeric = Number(amountToken.replace(',', '.'));
+  const parsedAmount = Number.isFinite(numeric) ? numeric : numberWords[amountToken];
+  if (!(parsedAmount > 0)) return { name: clean };
+  const remainder = firstMatch[2];
+  const units: Array<[RegExp, string]> = [
+    [/^(liter|litern|l)\\b\\s*/i, 'l'], [/^(milliliter|millilitern|ml)\\b\\s*/i, 'ml'],
+    [/^(kilogramm|kilo|kg)\\b\\s*/i, 'kg'], [/^(gramm|gram|g)\\b\\s*/i, 'g'],
+    [/^(packung|packungen|pkg)\\b\\s*/i, 'Pkg.'], [/^(stück|stueck|stk)\\b\\s*/i, 'Stk.'],
+    [/^(dose|dosen)\\b\\s*/i, 'Dose'], [/^(bund)\\b\\s*/i, 'Bund'],
+  ];
+  for (const [pattern, unit] of units) {
+    if (!pattern.test(remainder)) continue;
+    const name = remainder.replace(pattern, '').trim();
+    if (!name) return { name: clean };
+    return { name: name.charAt(0).toLocaleUpperCase('de-AT') + name.slice(1), amount: parsedAmount, unit };
+  }
+  return { name: clean };
+}
+
+'''
+    s = s[:parser_at] + parser + s[parser_at:]
+
+swipe_start = s.index('function ShoppingSwipeRow(')
+swipe_end = s.index('function ShoppingScreen(', swipe_start)
+s = s[:swipe_start] + '''function ShoppingSwipeRow({ item, compact, onToggle, onDelete }: { item: ShoppingItem; compact: boolean; onToggle: (item: ShoppingItem) => void; onDelete: (item: ShoppingItem) => void }) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
+  const rowHeight = useRef(new Animated.Value(compact ? 54 : 64)).current;
+  const deleting = useRef(false);
+  const pan = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) => !deleting.current && Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25,
+    onPanResponderMove: (_event, gesture) => { if (gesture.dx < 0) translateX.setValue(Math.max(-145, gesture.dx)); },
+    onPanResponderRelease: (_event, gesture) => {
+      if (gesture.dx < -58 || gesture.vx < -0.7) {
+        deleting.current = true;
+        Animated.parallel([
+          Animated.timing(translateX, { toValue: -420, duration: 180, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+        ]).start(() => Animated.timing(rowHeight, { toValue: 0, duration: 110, useNativeDriver: false }).start(() => onDelete(item)));
+      } else Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 28, bounciness: 0 }).start();
+    },
+    onPanResponderTerminate: () => Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 28, bounciness: 0 }).start(),
+  }), [item, onDelete, translateX, opacity, rowHeight]);
+  const meta = [`${formatAmount(item.amount)} ${item.unit}`, item.addedByName ? `von ${item.addedByName}` : null, item.done && item.completedByName ? `erledigt von ${item.completedByName}` : null].filter(Boolean).join(' · ');
+  return <Animated.View style={{ height: rowHeight, opacity, overflow: 'hidden' }}><View style={styles.swipeRowClip}><View style={styles.swipeDeleteBack}><MaterialCommunityIcons name="trash-can-outline" size={21} color="#FFFFFF" /><Text style={styles.swipeDeleteText}>Löschen</Text></View><Animated.View {...pan.panHandlers} style={{ transform: [{ translateX }] }}><View style={[styles.shoppingRowV214, compact && styles.shoppingRowCompact]}><Pressable accessibilityLabel={item.done ? `${item.name} als offen markieren` : `${item.name} als erledigt markieren`} onPress={() => onToggle(item)} style={[styles.checkbox, item.done && styles.checkboxDone]}>{item.done ? <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" /> : null}</Pressable><View style={styles.flex1}><Text style={[styles.shoppingName, item.done && styles.shoppingNameDone]} numberOfLines={1}>{item.name}</Text><Text style={styles.shoppingMetaTiny} numberOfLines={1}>{meta}</Text></View></View></Animated.View></View></Animated.View>;
+}
+
+''' + s[swipe_end:]
+
+speech_start = s.index("  useSpeechRecognitionEvent('result'")
+speech_end = s.index("  useSpeechRecognitionEvent('error'", speech_start)
+s = s[:speech_start] + '''  useSpeechRecognitionEvent('result', (event) => {
+    const transcript = event.results[0]?.transcript?.trim();
+    if (!transcript) return;
+    const parsed = parseSpokenShopping(transcript);
+    setName(parsed.name);
+    if (parsed.amount) setAmount(parsed.amount);
+    if (parsed.unit) setUnit(parsed.unit);
+  });
+''' + s[speech_end:]
+s = s.replace('Ich höre zu … sprich den Produktnamen.', 'Ich höre zu … z. B. „2 Liter Milch“.', 1)
+
+home_start = s.index('function HomeScreen(')
+home_end = s.index('function PlanScreen(', home_start)
+s = s[:home_start] + '''function HomeScreen({ household, meals, items, history, pantryItems, onNavigate, onSettings, onCooked }: { household: Household; meals: Record<string, string>; items: ShoppingItem[]; history: MealHistoryEntry[]; pantryItems: PantryItem[]; onNavigate: (tab: Tab) => void; onSettings: () => void; onCooked: (title: string) => Promise<void> }) {
+  const tonight = meals[todayIso()] || '';
+  const planned = getWeekDays(1).filter((entry) => Boolean(meals[entry.iso])).length;
+  const openItems = items.filter((item) => !item.done).length;
+  const cookedToday = tonight ? history.some((entry) => entry.cookedOn === todayIso() && normalizeTitle(entry.recipeTitle) === normalizeTitle(tonight)) : false;
+  const dateLabel = new Date().toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' });
+  const expiring = getUrgentPantry(pantryItems, 3).slice(0, 3);
+  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
+    <ScreenHeader eyebrow={`${dateLabel} · ${household.name}`} title="Heute" subtitle={`Gemeinsam mit ${household.members.length} ${household.members.length === 1 ? 'Person' : 'Personen'} planen.`} action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
+    <SurfaceCard style={styles.heroCard}><View style={styles.heroIcon}><MaterialCommunityIcons name="silverware-fork-knife" size={25} color={colors.accent} /></View><Text style={styles.heroLabel}>HEUTE ABEND</Text><Text style={styles.heroMeal}>{tonight || 'Noch nichts geplant'}</Text><Text style={styles.heroMeta}>{tonight ? cookedToday ? 'Als gekocht markiert – der Haushalt ist auf dem gleichen Stand.' : 'Dein Abendessen ist im gemeinsamen Wochenplan.' : 'Plane jetzt ein Abendessen für den Haushalt.'}</Text><View style={styles.heroActions}><ActionButton label={tonight ? 'Wochenplan öffnen' : 'Abendessen planen'} icon="calendar-week-outline" onPress={() => onNavigate('woche')} variant="secondary" style={styles.flexButton} />{tonight && !cookedToday ? <ActionButton label="Gekocht" icon="check-circle-outline" onPress={() => onCooked(tonight)} style={styles.flexButton} /> : null}</View></SurfaceCard>
+    <View style={styles.metricsRow}><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="calendar-check-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{planned}/7</Text><Text style={styles.metricLabel}>nächste Woche geplant</Text></SurfaceCard><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="cart-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{openItems}</Text><Text style={styles.metricLabel}>offene Einkäufe</Text></SurfaceCard></View>
+    {expiring.length ? <><SectionTitle title="Bald aufbrauchen" /><SurfaceCard style={styles.homeExpiryCard}>{expiring.map(({ item, info }) => <Pressable key={item.id} onPress={() => onNavigate('vorrat')} style={styles.homeExpiryRow}><MaterialCommunityIcons name={info.tone === 'today' || info.tone === 'expired' ? 'alert-circle' : 'clock-alert-outline'} size={19} color={info.tone === 'today' || info.tone === 'expired' ? colors.danger : colors.accent} /><Text style={styles.homeExpiryName} numberOfLines={1}>{item.productName}</Text><Text style={[styles.homeExpiryStatus, (info.tone === 'today' || info.tone === 'expired') && styles.homeExpiryStatusDanger]}>{info.label}</Text></Pressable>)}</SurfaceCard></> : null}
+    <SectionTitle title="Schnellzugriff" /><View style={styles.quickGrid}><Pressable style={styles.quickAction} onPress={() => onNavigate('woche')}><View style={styles.quickIcon}><MaterialCommunityIcons name="calendar-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Woche planen</Text><Text style={styles.quickText}>Abendessen gemeinsam festlegen.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Einkauf ergänzen</Text><Text style={styles.quickText}>Jeder im Haushalt sieht Änderungen sofort.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('vorrat')}><View style={styles.quickIcon}><MaterialCommunityIcons name="archive-outline" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Vorrat</Text><Text style={styles.quickText}>Gekaufte Produkte scannen, Mengen und MHD verwalten.</Text></Pressable></View>
+  </ScrollView>;
+}
+
+''' + s[home_end:]
+
+state_anchor = "  const [history, setHistory] = useState<MealHistoryEntry[]>([]);"
+if 'const [pantryItems, setPantryItems]' not in s:
+    s = s.replace(state_anchor, state_anchor + "\n  const [pantryItems, setPantryItems] = useState<PantryItem[]>([]);", 1)
+ready_anchor = "  const [ready, setReady] = useState(false);"
+if 'const [startupProgress, setStartupProgress]' not in s:
+    s = s.replace(ready_anchor, ready_anchor + "\n  const [startupProgress, setStartupProgress] = useState(0);", 1)
+
+reload_start = s.index('  const reloadAll = async (fastStart = false) => {')
+first_effect = s.index('  useEffect(() => {', reload_start)
+s = s[:reload_start] + '''  const reloadAll = async (startup = false) => {
+    const startedAt = Date.now();
+    const generation = ++loadGeneration.current;
+    if (startup) setStartupProgress(0);
+    clearHouseholdCache();
+    if (startup) setStartupProgress(12);
+    const nextHousehold = await loadHousehold();
+    if (generation !== loadGeneration.current) return;
+    setHousehold(nextHousehold);
+    if (startup) setStartupProgress(30);
+    const [shopping, plan, pantry] = await Promise.all([loadShopping(), loadMealPlan(), loadPantry()]);
+    if (generation !== loadGeneration.current) return;
+    setItems(shopping);
+    setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
+    setPantryItems(pantry);
+    syncExpiryNotifications(pantry).catch(() => undefined);
+    if (startup) setStartupProgress(68);
+    const [customRecipes, cookedHistory, pending, userResult] = await Promise.all([loadOwnRecipes(), loadMealHistory(), loadPendingHouseholdInvitations(), supabase.auth.getUser()]);
+    if (generation !== loadGeneration.current) return;
+    setOwnRecipes(customRecipes); setHistory(cookedHistory); setInvitations(pending); setEmail(userResult.data.user?.email ?? '');
+    if (startup) {
+      setStartupProgress(92);
+      const remaining = 1350 - (Date.now() - startedAt);
+      if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+      if (generation !== loadGeneration.current) return;
+      setStartupProgress(100);
+      await new Promise((resolve) => setTimeout(resolve, 220));
+    }
+    setReady(true);
+  };
+
+''' + s[first_effect:]
+
+first_effect = s.index('  useEffect(() => {', s.index('const reloadAll'))
+second_effect = s.index('  useEffect(() => {', first_effect + 5)
+s = s[:first_effect] + '''  useEffect(() => {
+    setStartupProgress(0);
+    loadPreferences().then((loaded) => { setPreferences(loaded); setTab(loaded.startTab); applyAppearance(loaded.themeMode, loaded.cozyMode); }).catch(() => undefined);
+    reloadAll(true).catch((error) => { setStartupProgress(100); setReady(true); Alert.alert('Daten konnten nicht geladen werden', germanError(error?.message)); });
+  }, []);
+
+''' + s[second_effect:]
+
+realtime_anchor = "      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => loadShopping().then(setItems).catch(() => undefined))"
+if "table: 'pantry_items', filter" not in s[s.index('function MainApp()'):]:
+    if realtime_anchor not in s:
+        raise SystemExit('realtime anchor missing')
+    s = s.replace(realtime_anchor, realtime_anchor + "\n      .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items', filter }, () => loadPantry().then((next) => { setPantryItems(next); syncExpiryNotifications(next).catch(() => undefined); }).catch(() => undefined))", 1)
+
+s = s.replace('if (!ready || !household) return <LoadingScreen message="Dein Haushalt wird vorbereitet …" />;', 'if (!ready || !household) return <LoadingScreen message="Deine Daten werden sicher geladen …" progress={startupProgress} />;', 1)
+old_home = "{tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}"
+if old_home not in s:
+    raise SystemExit('home render anchor missing')
+s = s.replace(old_home, "{tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} pantryItems={pantryItems} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}", 1)
+s = s.replace('if (checking) return <LoadingScreen message="Anmeldung wird geprüft …" />;', 'if (checking) return <LoadingScreen message="Anmeldung wird geprüft …" progress={5} />;', 1)
+
+if 'homeExpiryCard:' not in s:
+    style_anchor = "  heroCard: { padding: 20, gap: 10 }, heroIcon:"
+    if style_anchor not in s:
+        raise SystemExit('hero style anchor missing')
+    s = s.replace(style_anchor, "  homeExpiryCard: { paddingHorizontal: 14, overflow: 'hidden' }, homeExpiryRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, homeExpiryName: { ...typography.caption, color: colors.text, fontWeight: '800', flex: 1 }, homeExpiryStatus: { fontSize: 11, lineHeight: 14, color: colors.accent, fontWeight: '800' }, homeExpiryStatusDanger: { color: colors.danger },\n  heroCard: { padding: 20, gap: 10 }, heroIcon:", 1)
+
+old_progress = "loadingProgressFill: { width: '68%', height: '100%', borderRadius: 3, backgroundColor: colors.accent }, loadingHint:"
+if old_progress in s:
+    s = s.replace(old_progress, "loadingProgressFill: { height: '100%', borderRadius: 3, backgroundColor: colors.accent }, loadingPercent: { ...typography.caption, color: colors.accent, fontWeight: '800', minWidth: 38, textAlign: 'center' }, loadingHint:", 1)
+elif 'loadingPercent:' not in s:
+    raise SystemExit('loading progress style anchor missing')
+
+p.write_text(s)
+
+app_path = Path('app.json')
+app = json.loads(app_path.read_text())
+app['expo']['version'] = '2.2.2'
+app['expo']['ios']['buildNumber'] = '14'
+app['expo']['android']['versionCode'] = 14
+plugins = app['expo'].setdefault('plugins', [])
+if 'expo-notifications' not in plugins:
+    plugins.append('expo-notifications')
+app_path.write_text(json.dumps(app, ensure_ascii=False, indent=2) + '\n')
+
+package_path = Path('package.json')
+package = json.loads(package_path.read_text())
+package['version'] = '2.2.2'
+package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n')
+
+changelog_path = Path('CHANGELOG.md')
+changelog = changelog_path.read_text()
+if '## 2.2.2' not in changelog:
+    entry = '''# MealFlow Changelog\n\n## 2.2.2\n\n- Einkaufsliste: Löschgeste mit flüssigem Ausblenden und Zusammenklappen statt abruptem Entfernen.\n- MHD-Warnungen für Produkte, die in den nächsten drei Tagen ablaufen.\n- Produkte mit heutigem oder überschrittenem MHD werden deutlich rot hervorgehoben.\n- Lokale iOS-/Android-Benachrichtigungen einige Tage vor dem MHD und am Ablaufdatum.\n- Vorratsseite minimalistischer und auf Scannen, offene Einkäufe, MHD und vorhandene Produkte reduziert.\n- Heute-Übersicht zeigt bis zu drei bald ablaufende Vorratsprodukte.\n- Spracheingabe versteht strukturierte Angaben wie „2 Liter Milch“, „500 Gramm Nudeln“ oder „3 Packungen Joghurt“.\n- Startbildschirm mit echtem Ladefortschritt von 0 bis 100 Prozent entlang der geladenen Datenphasen und kurzer Mindestanzeige.\n- Vorrats-Realtime-Updates entprellt, parallele Refreshes verhindert und Datenabfragen begrenzt.\n- Open-Food-Facts-Abrufe mit Timeout, Barcode-Validierung, HTTPS-Bildvalidierung und begrenzten Text-/Mengenwerten gehärtet.\n- App-Version 2.2.2, iOS Build 14, Android Version Code 14.\n\n'''
+    changelog = entry + (changelog[len('# MealFlow Changelog\n\n'):] if changelog.startswith('# MealFlow Changelog\n\n') else changelog)
+    changelog_path.write_text(changelog)
