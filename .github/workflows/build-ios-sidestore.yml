@@ -3,7 +3,13 @@ name: Build iOS IPA for SideStore
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - source.json
+      - README.md
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-ipa:
@@ -23,6 +29,24 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Prepare SideStore release metadata
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./app.json').expo.version")
+          BUILD_VERSION="${GITHUB_RUN_NUMBER}"
+          RELEASE_TAG="sidestore-v${VERSION}-b${BUILD_VERSION}"
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const config = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+          config.expo.ios.buildNumber = process.env.GITHUB_RUN_NUMBER;
+          fs.writeFileSync('app.json', JSON.stringify(config, null, 2) + '\n');
+          NODE
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Generate iOS project
         run: npx expo prebuild --platform ios --clean --no-install
@@ -54,9 +78,95 @@ jobs:
           (cd "$RUNNER_TEMP" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/release/MealFlow-SideStore.ipa" Payload)
           test -f release/MealFlow-SideStore.ipa
 
+          INFO_PLIST="$APP_PATH/Info.plist"
+          ACTUAL_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")
+          ACTUAL_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")
+          test "$ACTUAL_VERSION" = "${{ steps.meta.outputs.version }}"
+          test "$ACTUAL_BUILD" = "${{ steps.meta.outputs.build }}"
+
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: MealFlow-SideStore-IPA
           path: release/MealFlow-SideStore.ipa
           if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          gh release create "$TAG" \
+            release/MealFlow-SideStore.ipa \
+            --target "$GITHUB_SHA" \
+            --title "MealFlow ${{ steps.meta.outputs.version }} (Build ${{ steps.meta.outputs.build }})" \
+            --notes "Automatischer SideStore Build aus main." \
+            --latest
+
+      - name: Generate SideStore source
+        run: |
+          IPA_SIZE=$(stat -f%z release/MealFlow-SideStore.ipa)
+          RELEASE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          DOWNLOAD_URL="https://github.com/redshoxx/MealFlow/releases/download/${{ steps.meta.outputs.tag }}/MealFlow-SideStore.ipa"
+
+          cat > source.json <<EOF
+          {
+            "name": "MealFlow",
+            "subtitle": "Automatische SideStore Updates für MealFlow",
+            "description": "Offizielle MealFlow SideStore Source. Neue Builds werden automatisch über GitHub Releases veröffentlicht.",
+            "iconURL": "https://github.com/redshoxx.png",
+            "website": "https://github.com/redshoxx/MealFlow",
+            "tintColor": "#79C843",
+            "featuredApps": ["at.mealflow.app"],
+            "apps": [
+              {
+                "name": "MealFlow",
+                "bundleIdentifier": "at.mealflow.app",
+                "developerName": "redshoxx",
+                "subtitle": "Wochenplan, Einkaufsliste und Rezepte",
+                "localizedDescription": "MealFlow verbindet deinen Abendessen-Wochenplan, deine Einkaufsliste und Rezeptsuche auf iPhone und Android.",
+                "iconURL": "https://github.com/redshoxx.png",
+                "tintColor": "#79C843",
+                "category": "lifestyle",
+                "versions": [
+                  {
+                    "version": "${{ steps.meta.outputs.version }}",
+                    "buildVersion": "${{ steps.meta.outputs.build }}",
+                    "date": "$RELEASE_DATE",
+                    "localizedDescription": "Automatisches MealFlow Update aus GitHub.",
+                    "downloadURL": "$DOWNLOAD_URL",
+                    "size": $IPA_SIZE
+                  }
+                ],
+                "appPermissions": {
+                  "entitlements": [],
+                  "privacy": {}
+                }
+              }
+            ],
+            "news": []
+          }
+          EOF
+
+          python3 -m json.tool source.json >/dev/null
+
+      - name: Publish SideStore source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CONTENT=$(base64 < source.json | tr -d '\n')
+          API_PATH="repos/${GITHUB_REPOSITORY}/contents/source.json"
+          CURRENT_SHA=$(gh api "$API_PATH?ref=main" --jq '.sha' 2>/dev/null || true)
+
+          if [ -n "$CURRENT_SHA" ]; then
+            gh api --method PUT "$API_PATH" \
+              -f message="chore: update SideStore source [skip ci]" \
+              -f content="$CONTENT" \
+              -f branch="main" \
+              -f sha="$CURRENT_SHA" >/dev/null
+          else
+            gh api --method PUT "$API_PATH" \
+              -f message="chore: create SideStore source [skip ci]" \
+              -f content="$CONTENT" \
+              -f branch="main" >/dev/null
+          fi
