@@ -1,0 +1,42 @@
+name: Fix MealFlow 2.2.5 dual meal upsert
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-v225-dual-meal-upsert.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Preserve main meal when saving Saskia meal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/lib/cloud.ts')
+          s = p.read_text()
+          old = ".upsert({ household_id: householdId, owner_id: user.id, planned_date: plannedDate, meal: null, meal_saskia: clean }, { onConflict: 'household_id,planned_date' });"
+          new = ".upsert({ household_id: householdId, owner_id: user.id, planned_date: plannedDate, meal_saskia: clean }, { onConflict: 'household_id,planned_date' });"
+          if old not in s:
+              raise SystemExit('Expected Saskia upsert not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - run: npm install --ignore-scripts
+      - run: npm run typecheck
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/cloud.ts package-lock.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Preserve both meals in MealFlow 2.2.5"
+          git push
