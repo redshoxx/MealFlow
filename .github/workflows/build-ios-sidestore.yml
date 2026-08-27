@@ -1,0 +1,62 @@
+name: Build iOS IPA for SideStore
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Generate iOS project
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods dependencies
+        working-directory: ios
+        run: pod install --repo-update
+
+      - name: Build unsigned iPhone archive
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace ios/MealFlow.xcworkspace \
+            -scheme MealFlow \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/MealFlow.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            archive
+
+      - name: Package IPA for SideStore
+        run: |
+          APP_PATH="$RUNNER_TEMP/MealFlow.xcarchive/Products/Applications/MealFlow.app"
+          test -d "$APP_PATH"
+          mkdir -p "$RUNNER_TEMP/Payload" release
+          cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
+          (cd "$RUNNER_TEMP" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/release/MealFlow-SideStore.ipa" Payload)
+          test -f release/MealFlow-SideStore.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MealFlow-SideStore-IPA
+          path: release/MealFlow-SideStore.ipa
+          if-no-files-found: error
