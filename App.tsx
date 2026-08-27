@@ -584,27 +584,36 @@ function PlanScreen({ household, meals, setMeals, onSettings }: { household: Hou
   </>;
 }
 
-function ShoppingSwipeRow({ item, compact, onToggle, onDelete }: { item: ShoppingItem; compact: boolean; onToggle: (item: ShoppingItem) => void; onDelete: (item: ShoppingItem) => void }) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
-  const rowHeight = useRef(new Animated.Value(compact ? 54 : 64)).current;
-  const deleting = useRef(false);
-  const pan = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_event, gesture) => !deleting.current && Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25,
-    onPanResponderMove: (_event, gesture) => { if (gesture.dx < 0) translateX.setValue(Math.max(-145, gesture.dx)); },
-    onPanResponderRelease: (_event, gesture) => {
-      if (gesture.dx < -58 || gesture.vx < -0.7) {
-        deleting.current = true;
-        Animated.parallel([
-          Animated.timing(translateX, { toValue: -420, duration: 180, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-        ]).start(() => Animated.timing(rowHeight, { toValue: 0, duration: 110, useNativeDriver: false }).start(() => onDelete(item)));
-      } else Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 28, bounciness: 0 }).start();
-    },
-    onPanResponderTerminate: () => Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 28, bounciness: 0 }).start(),
-  }), [item, onDelete, translateX, opacity, rowHeight]);
+function ShoppingProductRow({ item, compact, onToggle, onDelete }: { item: ShoppingItem; compact: boolean; onToggle: (item: ShoppingItem) => void; onDelete: (item: ShoppingItem) => void }) {
   const meta = [`${formatAmount(item.amount)} ${item.unit}`, item.addedByName ? `von ${item.addedByName}` : null, item.done && item.completedByName ? `erledigt von ${item.completedByName}` : null].filter(Boolean).join(' · ');
-  return <Animated.View style={{ height: rowHeight, opacity, overflow: 'hidden' }}><View style={styles.swipeRowClip}><View style={styles.swipeDeleteBack}><MaterialCommunityIcons name="trash-can-outline" size={21} color="#FFFFFF" /><Text style={styles.swipeDeleteText}>Löschen</Text></View><Animated.View {...pan.panHandlers} style={{ transform: [{ translateX }] }}><View style={[styles.shoppingRowV214, compact && styles.shoppingRowCompact]}><Pressable accessibilityLabel={item.done ? `${item.name} als offen markieren` : `${item.name} als erledigt markieren`} onPress={() => onToggle(item)} style={[styles.checkbox, item.done && styles.checkboxDone]}>{item.done ? <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" /> : null}</Pressable><View style={styles.flex1}><Text style={[styles.shoppingName, item.done && styles.shoppingNameDone]} numberOfLines={1}>{item.name}</Text><Text style={styles.shoppingMetaTiny} numberOfLines={1}>{meta}</Text></View></View></Animated.View></View></Animated.View>;
+  return (
+    <View style={[styles.shoppingRowV214, compact && styles.shoppingRowCompact]}>
+      <Pressable accessibilityLabel={item.done ? `${item.name} als offen markieren` : `${item.name} als erledigt markieren`} onPress={() => onToggle(item)} style={[styles.checkbox, item.done && styles.checkboxDone]}>
+        {item.done ? <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" /> : null}
+      </Pressable>
+      <View style={styles.flex1}>
+        <Text style={[styles.shoppingName, item.done && styles.shoppingNameDone]} numberOfLines={1}>{item.name}</Text>
+        <Text style={styles.shoppingMetaTiny} numberOfLines={1}>{meta}</Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${item.name} löschen`}
+        hitSlop={8}
+        onPress={() => onDelete(item)}
+        style={({ pressed }) => ({
+          width: 34,
+          height: 34,
+          borderRadius: 11,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: pressed ? colors.dangerSoft : colors.surfaceMuted,
+          opacity: pressed ? 0.72 : 1,
+        })}
+      >
+        <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
+      </Pressable>
+    </View>
+  );
 }
 
 function ShoppingScreen({
@@ -747,10 +756,10 @@ function ShoppingScreen({
       <View style={styles.shoppingToolbar}><View><Text style={styles.shoppingToolbarLabel}>GEMEINSAME LISTE</Text><Text style={styles.shoppingToolbarTitle}>{active.length ? `${active.length} noch zu besorgen` : 'Alles erledigt'}</Text></View><Pressable onPress={openAdd} style={styles.shoppingAddButton}><MaterialCommunityIcons name="plus" size={23} color="#FFFFFF" /><Text style={styles.shoppingAddButtonText}>Produkt</Text></Pressable></View>
 
       <SectionTitle title="Offen" />
-      {active.length ? <SurfaceCard style={styles.listCard}>{active.map((item) => <ShoppingSwipeRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onDelete={remove} />)}</SurfaceCard> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Eure gemeinsame Einkaufsliste ist aktuell leer." actionLabel="Produkt hinzufügen" onAction={openAdd} /></SurfaceCard>}
+      {active.length ? <SurfaceCard style={styles.listCard}>{active.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onDelete={remove} />)}</SurfaceCard> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Eure gemeinsame Einkaufsliste ist aktuell leer." actionLabel="Produkt hinzufügen" onAction={openAdd} /></SurfaceCard>}
 
-      {preferences.showCompletedShopping && completed.length ? <><SectionTitle title={`Erledigt · ${completed.length}`} /><SurfaceCard style={styles.listCard}>{completed.map((item) => <ShoppingSwipeRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onDelete={remove} />)}</SurfaceCard></> : null}
-      <Text style={styles.swipeHint}>Zum Löschen einen Artikel nach links wischen.</Text>
+      {preferences.showCompletedShopping && completed.length ? <><SectionTitle title={`Erledigt · ${completed.length}`} /><SurfaceCard style={styles.listCard}>{completed.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onDelete={remove} />)}</SurfaceCard></> : null}
+      <Text style={styles.swipeHint}>Zum Löschen den kleinen Papierkorb beim Produkt verwenden.</Text>
     </ScrollView>
 
     <Modal transparent visible={addOpen} animationType="fade" presentationStyle="overFullScreen" onRequestClose={() => setAddOpen(false)}>
