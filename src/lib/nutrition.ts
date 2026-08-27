@@ -37,6 +37,7 @@ export type FoodProduct = {
   protein100g: number;
   carbs100g: number;
   fat100g: number;
+  nutritionDataComplete: boolean;
 };
 
 export type NutritionTotals = {
@@ -61,12 +62,70 @@ async function requireUserId() {
 }
 
 function asNumber(value: unknown, fallback = 0) {
-  const parsed = typeof value === 'number' ? value : Number(value);
+  const parsed = typeof value === 'number' ? value : Number(String(value ?? '').replace(',', '.'));
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function positiveNumber(...values: unknown[]) {
+  for (const value of values) {
+    const parsed = asNumber(value);
+    if (parsed > 0) return parsed;
+  }
+  return 0;
 }
 
 function round1(value: number) {
   return Math.round(value * 10) / 10;
+}
+
+function mapNutritionRow(row: any): NutritionEntry {
+  return {
+    id: String(row.id),
+    eatenOn: String(row.eaten_on),
+    mealType: row.meal_type as MealType,
+    barcode: row.barcode == null ? null : String(row.barcode),
+    productName: String(row.product_name),
+    brand: row.brand == null ? null : String(row.brand),
+    imageUrl: row.image_url == null ? null : String(row.image_url),
+    amountG: asNumber(row.amount_g),
+    calories: asNumber(row.calories),
+    proteinG: asNumber(row.protein_g),
+    carbsG: asNumber(row.carbs_g),
+    fatG: asNumber(row.fat_g),
+    source: String(row.source ?? 'open_food_facts'),
+    createdAt: String(row.created_at),
+  };
+}
+
+function servingQuantityFromProduct(product: any) {
+  const direct = positiveNumber(product?.serving_quantity);
+  if (direct) return direct;
+  const match = String(product?.serving_size ?? '').match(/([0-9]+(?:[.,][0-9]+)?)\s*(?:g|ml)\b/i);
+  return match ? positiveNumber(match[1]) : 0;
+}
+
+function nutrientPer100g(nutriments: any, key: string, servingQuantity: number) {
+  const per100g = asNumber(nutriments?.[`${key}_100g`], Number.NaN);
+  if (Number.isFinite(per100g) && per100g >= 0) return per100g;
+
+  const perServing = asNumber(nutriments?.[`${key}_serving`], Number.NaN);
+  if (servingQuantity > 0 && Number.isFinite(perServing) && perServing >= 0) {
+    return (perServing / servingQuantity) * 100;
+  }
+
+  return 0;
+}
+
+function energyKcalPer100g(nutriments: any, servingQuantity: number) {
+  const kcal = nutrientPer100g(nutriments, 'energy-kcal', servingQuantity);
+  if (kcal > 0) return kcal;
+
+  let kj = nutrientPer100g(nutriments, 'energy-kj', servingQuantity);
+  if (!kj) {
+    const genericEnergy = asNumber(nutriments?.energy_100g);
+    if (genericEnergy > 0) kj = genericEnergy > 10000 ? genericEnergy / 1000 : genericEnergy;
+  }
+  return kj > 0 ? kj / 4.184 : 0;
 }
 
 export async function loadNutritionProfile(): Promise<NutritionProfile> {
@@ -117,22 +176,21 @@ export async function loadNutritionEntries(eatenOn: string): Promise<NutritionEn
     .eq('eaten_on', eatenOn)
     .order('created_at', { ascending: true });
   if (error) throw error;
-  return (data ?? []).map((row: any) => ({
-    id: String(row.id),
-    eatenOn: String(row.eaten_on),
-    mealType: row.meal_type as MealType,
-    barcode: row.barcode == null ? null : String(row.barcode),
-    productName: String(row.product_name),
-    brand: row.brand == null ? null : String(row.brand),
-    imageUrl: row.image_url == null ? null : String(row.image_url),
-    amountG: asNumber(row.amount_g),
-    calories: asNumber(row.calories),
-    proteinG: asNumber(row.protein_g),
-    carbsG: asNumber(row.carbs_g),
-    fatG: asNumber(row.fat_g),
-    source: String(row.source ?? 'open_food_facts'),
-    createdAt: String(row.created_at),
-  }));
+  return (data ?? []).map(mapNutritionRow);
+}
+
+export async function loadNutritionEntriesRange(startDate: string, endDate: string): Promise<NutritionEntry[]> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from('nutrition_entries')
+    .select('id,eaten_on,meal_type,barcode,product_name,brand,image_url,amount_g,calories,protein_g,carbs_g,fat_g,source,created_at')
+    .eq('user_id', userId)
+    .gte('eaten_on', startDate)
+    .lte('eaten_on', endDate)
+    .order('eaten_on', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map(mapNutritionRow);
 }
 
 export async function addNutritionEntry(input: Omit<NutritionEntry, 'id' | 'createdAt'>) {
@@ -153,22 +211,7 @@ export async function addNutritionEntry(input: Omit<NutritionEntry, 'id' | 'crea
     source: input.source,
   }).select('id,eaten_on,meal_type,barcode,product_name,brand,image_url,amount_g,calories,protein_g,carbs_g,fat_g,source,created_at').single();
   if (error) throw error;
-  return {
-    id: String(data.id),
-    eatenOn: String(data.eaten_on),
-    mealType: data.meal_type as MealType,
-    barcode: data.barcode == null ? null : String(data.barcode),
-    productName: String(data.product_name),
-    brand: data.brand == null ? null : String(data.brand),
-    imageUrl: data.image_url == null ? null : String(data.image_url),
-    amountG: asNumber(data.amount_g),
-    calories: asNumber(data.calories),
-    proteinG: asNumber(data.protein_g),
-    carbsG: asNumber(data.carbs_g),
-    fatG: asNumber(data.fat_g),
-    source: String(data.source ?? 'open_food_facts'),
-    createdAt: String(data.created_at),
-  } satisfies NutritionEntry;
+  return mapNutritionRow(data);
 }
 
 export async function deleteNutritionEntry(id: string) {
@@ -199,34 +242,45 @@ export async function fetchOpenFoodFactsProduct(barcode: string): Promise<FoodPr
     'image_front_url',
     'serving_size',
     'serving_quantity',
+    'nutrition_data_per',
     'nutriments',
   ].join(',');
   const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(clean)}?fields=${encodeURIComponent(fields)}`, {
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'MealFlow/2.2.0 (https://github.com/redshoxx/MealFlow)',
+      'User-Agent': 'MealFlow/2.2.1 (https://github.com/redshoxx/MealFlow)',
     },
   });
   if (!response.ok) throw new Error('Open Food Facts ist derzeit nicht erreichbar.');
   const payload = await response.json() as any;
   if (payload?.status !== 1 || !payload?.product) throw new Error('Dieses Produkt wurde bei Open Food Facts nicht gefunden.');
+
   const product = payload.product;
   const nutriments = product.nutriments ?? {};
-  let kcal100g = asNumber(nutriments['energy-kcal_100g']);
-  if (!kcal100g) {
-    const kj100g = asNumber(nutriments['energy-kj_100g'] ?? nutriments.energy_100g);
-    if (kj100g > 0) kcal100g = kj100g / 4.184;
-  }
+  const servingQuantity = servingQuantityFromProduct(product);
+  const kcal100g = round1(energyKcalPer100g(nutriments, servingQuantity));
+  const protein100g = round1(nutrientPer100g(nutriments, 'proteins', servingQuantity));
+  const carbs100g = round1(nutrientPer100g(nutriments, 'carbohydrates', servingQuantity));
+  const fat100g = round1(nutrientPer100g(nutriments, 'fat', servingQuantity));
+  const hasNutrimentPayload = Boolean(
+    nutriments['energy-kcal_100g'] != null || nutriments['energy-kcal_serving'] != null ||
+    nutriments.energy_100g != null || nutriments['energy-kj_100g'] != null ||
+    nutriments.proteins_100g != null || nutriments.proteins_serving != null ||
+    nutriments.carbohydrates_100g != null || nutriments.carbohydrates_serving != null ||
+    nutriments.fat_100g != null || nutriments.fat_serving != null
+  );
+
   return {
     barcode: clean,
     name: String(product.product_name_de || product.product_name || `Produkt ${clean}`),
     brand: product.brands ? String(product.brands) : undefined,
     imageUrl: product.image_front_small_url || product.image_front_url || undefined,
     servingSize: product.serving_size ? String(product.serving_size) : undefined,
-    servingQuantity: asNumber(product.serving_quantity) || undefined,
-    kcal100g: round1(kcal100g),
-    protein100g: round1(asNumber(nutriments.proteins_100g)),
-    carbs100g: round1(asNumber(nutriments.carbohydrates_100g)),
-    fat100g: round1(asNumber(nutriments.fat_100g)),
+    servingQuantity: servingQuantity || undefined,
+    kcal100g,
+    protein100g,
+    carbs100g,
+    fat100g,
+    nutritionDataComplete: hasNutrimentPayload && kcal100g >= 0,
   };
 }
