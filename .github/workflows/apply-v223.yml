@@ -44,14 +44,13 @@ jobs:
       - name: Security audit
         run: npm audit --audit-level=high
 
-      - name: Commit verified update
+      - name: Commit verified app update
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/apply-v223.yml scripts/apply-v223.py scripts/fix-v223-config.py
+          git restore .github/workflows/build-android-apk.yml .github/workflows/build-ios-sidestore.yml
           git add App.tsx app.json package.json package-lock.json CHANGELOG.md \
-            src/lib/cloud.ts src/screens/InventoryScreen.tsx \
-            .github/workflows/build-android-apk.yml .github/workflows/build-ios-sidestore.yml
+            src/lib/cloud.ts src/screens/InventoryScreen.tsx
           git commit -m "Build MealFlow 2.2.3 platform update"
           git pull --rebase origin main
           git push origin main
