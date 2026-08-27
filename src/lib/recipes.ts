@@ -1,5 +1,3 @@
-import { supabase } from './supabase';
-
 export type Recipe = {
   id: string;
   title: string;
@@ -14,16 +12,7 @@ export async function searchRecipes(query: string): Promise<Recipe[]> {
   const q = query.trim();
   if (!q) return [];
 
-  if (supabase) {
-    const { data, error } = await supabase.functions.invoke('recipe-search', {
-      body: { q },
-    });
-    if (!error && Array.isArray(data?.recipes)) return data.recipes;
-  }
-
-  const response = await fetch(
-    `https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(q)}`,
-  );
+  const response = await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(q)}`);
   if (!response.ok) throw new Error(`Rezeptsuche fehlgeschlagen (${response.status})`);
   const body = await response.json();
   return (body.meals ?? []).slice(0, 12).map((meal: any) => {

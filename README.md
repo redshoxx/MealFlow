@@ -1,13 +1,14 @@
-# MealFlow 1.1
+# MealFlow 1.2
 
 MealFlow ist eine gemeinsame iPhone-/Android-App für Abendessen-Wochenplanung, Einkaufsliste mit Mengen und Einheiten sowie Rezeptsuche aus dem Internet.
 
 ## Plattformen
 
 - iPhone: IPA für SideStore
-- Android: installierbare APK
-- Gemeinsame Cloud-Synchronisierung über Supabase
-- Optimiert für iPhone 12, gleichzeitig responsiv für Android
+- Android: signierte, installierbare APK
+- Gemeinsame Cloud-Synchronisierung über Appwrite
+- Appwrite Account + TablesDB + Realtime
+- Optimiert für iPhone 12 und responsiv für Android
 - Keine Alexa-Integration
 
 ## Funktionen
@@ -17,12 +18,30 @@ MealFlow ist eine gemeinsame iPhone-/Android-App für Abendessen-Wochenplanung, 
 - Einheiten u. a. Stk., Pkg., g, kg, ml, l, EL, TL, Bund und Dose
 - iOS-artiger Mengen-/Einheiten-Picker
 - Artikel abhaken und löschen
-- Rezeptsuche aus dem Internet
-- Rezeptdetails mit Zutaten und Mengen
+- Rezeptsuche aus dem Internet über TheMealDB
+- Rezeptdetails mit Zutaten
 - Rezeptzutaten direkt auf die Einkaufsliste übernehmen
 - Rezept direkt in den Wochenplan übernehmen
-- Supabase Auth + PostgreSQL + Realtime-Synchronisierung
-- Lokaler Demo-Modus ohne Supabase
+- Appwrite E-Mail-/Passwort-Login
+- Realtime-Synchronisierung zwischen iPhone und Android
+- Lokaler Demo-Modus, solange Appwrite nicht konfiguriert ist
+
+## Appwrite
+
+Die App verwendet den offiziellen React-Native-Appwrite-SDK.
+
+Die vollständige Einrichtung steht in `appwrite/SETUP.md`.
+
+Kurzfassung:
+
+1. Appwrite-Projekt erstellen.
+2. Apple- und Android-Plattform mit `at.mealflow.app` hinzufügen.
+3. Datenbank `mealflow` erstellen.
+4. Tabellen `shopping_items` und `meal_plan` gemäß `appwrite/SETUP.md` anlegen.
+5. Row security aktivieren und nur CREATE für authentifizierte Benutzer auf Tabellenebene erlauben.
+6. `.env.example` nach `.env` kopieren und Endpoint/IDs einsetzen.
+
+Die `EXPO_PUBLIC_APPWRITE_*` Werte sind öffentliche Client-Konfiguration. **Keinen Appwrite API Key in die Mobile-App eintragen.**
 
 ## Lokaler Start
 
@@ -34,66 +53,31 @@ npm run typecheck
 npx expo start
 ```
 
-Zum Testen kann Expo Go verwendet werden. Für die endgültige Installation sind die unten beschriebenen Builds vorgesehen.
-
-## Supabase verbinden
-
-1. Supabase-Projekt anlegen.
-2. `supabase/schema.sql` im SQL Editor ausführen.
-3. `.env.example` nach `.env` kopieren.
-4. `EXPO_PUBLIC_SUPABASE_URL` und `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` eintragen.
-5. Für die Rezeptsuche die Edge Function unter `supabase/functions/recipe-search` deployen.
-
-Secrets für Edamam bleiben serverseitig und werden nicht in die Mobile-App geschrieben.
-
 ## Android APK
 
-GitHub Actions führt bei jedem Push auf `main` automatisch den Workflow **Build Android APK** aus.
+Der Workflow **Build Android APK** erzeugt eine signierte Sideload-APK und verifiziert die APK-Signatur.
 
-Das Ergebnis heißt:
-
-`MealFlow-Android.apk`
-
-Es liegt nach erfolgreichem Workflow als GitHub-Actions-Artefakt bereit.
-
-Alternativ mit EAS:
-
-```bash
-npx eas-cli@latest build -p android --profile android-apk
-```
+Ergebnis: `MealFlow-Android.apk`
 
 ## iPhone / SideStore
 
-Der GitHub-Workflow **Build iOS IPA for SideStore** erzeugt auf einem macOS Runner eine unsignierte iPhone-App und verpackt sie als:
+Der Workflow **Build iOS IPA for SideStore** erstellt eine unsignierte App und verpackt sie als `MealFlow-SideStore.ipa`.
 
-`MealFlow-SideStore.ipa`
-
-Diese IPA ist für das anschließende Resigning durch SideStore gedacht. SideStore signiert sideloaded Apps mit dem persönlichen Apple-ID-Entwicklungszertifikat neu und installiert sie anschließend auf dem Gerät.
-
-Installation:
-
-1. Erfolgreichen GitHub Workflow öffnen.
-2. Artefakt `MealFlow-SideStore-IPA` laden.
-3. ZIP-Artefakt entpacken.
-4. `MealFlow-SideStore.ipa` auf dem iPhone in SideStore öffnen/importieren.
-5. SideStore übernimmt Signierung und Installation.
-
-Bei einem kostenlosen Apple-ID-Entwicklungszertifikat gelten die normalen SideStore-/Apple-Beschränkungen, insbesondere die regelmäßige Erneuerung der Signierung.
+SideStore signiert die IPA beim Import mit dem persönlichen Apple-ID-Entwicklungszertifikat neu.
 
 ## Wichtige Projektdateien
 
 - `App.tsx` – Mobile UI und App-Logik
-- `src/lib/cloud.ts` – Cloud-/Realtime-Zugriff
-- `src/lib/supabase.ts` – Supabase Client
-- `src/lib/recipes.ts` – Rezeptsuche
-- `supabase/schema.sql` – Datenbankschema + RLS
-- `supabase/functions/recipe-search` – geschützter Rezept-API-Proxy
+- `src/lib/appwrite.ts` – Appwrite Client, Account und Realtime
+- `src/lib/cloud.ts` – TablesDB-Zugriff und Synchronisierung
+- `src/lib/recipes.ts` – Internet-Rezeptsuche
+- `appwrite/SETUP.md` – Appwrite-Datenbank- und Berechtigungssetup
 - `.github/workflows/build-android-apk.yml` – APK Build
 - `.github/workflows/build-ios-sidestore.yml` – SideStore IPA Build
 
 ## Sicherheit
 
-- Kein Supabase Service Role Key in der App
-- Rezept-API-Schlüssel nur serverseitig
-- RLS auf den synchronisierten Tabellen
-- `.env` wird nicht in Git committed
+- Kein Appwrite API Key im Client
+- Private Row-Permissions pro Benutzer
+- Keine globale READ/UPDATE/DELETE-Freigabe
+- `.env` wird nicht committed
