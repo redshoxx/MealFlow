@@ -5,7 +5,7 @@ export type Recipe = {
   title: string;
   image?: string;
   source?: string;
-  sourceKind: 'mealflow' | 'online';
+  sourceKind: 'mealflow' | 'online' | 'web';
   url?: string;
   minutes?: number;
   instructions?: string;
@@ -21,6 +21,13 @@ export type RecipeFilters = {
   vegetarianOnly?: boolean;
   ingredient?: string;
   excludeTitles?: string[];
+};
+
+export type RecipeSearchPage = {
+  recipes: Recipe[];
+  page: number;
+  hasMore: boolean;
+  webConfigured: boolean;
 };
 
 const SEARCH_TRANSLATIONS: Record<string, string> = {
@@ -84,10 +91,16 @@ function matchesIngredient(recipe: Recipe, ingredient: string) {
 function applyFilters(recipes: Recipe[], filters: RecipeFilters) {
   const excluded = new Set((filters.excludeTitles ?? []).map(normalizeText));
   return recipes.filter((recipe) => {
+    if (excluded.has(normalizeText(recipe.title))) return false;
+
+    // Web results are already searched with these filter terms server-side.
+    // They often do not expose structured duration/ingredient metadata in the search result itself,
+    // so we must not discard them simply because that metadata is absent.
+    if (recipe.sourceKind === 'web') return true;
+
     if (filters.maxMinutes && (!recipe.minutes || recipe.minutes > filters.maxMinutes)) return false;
     if (filters.vegetarianOnly && recipe.vegetarian !== true) return false;
     if (filters.ingredient?.trim() && !matchesIngredient(recipe, filters.ingredient)) return false;
-    if (excluded.has(normalizeText(recipe.title))) return false;
     return true;
   });
 }
@@ -167,28 +180,108 @@ async function searchTheMealDb(query: string): Promise<Recipe[]> {
   });
 }
 
-export async function searchRecipes(query: string, filters: RecipeFilters = {}): Promise<Recipe[]> {
-  const clean = query.trim();
-  const [catalogResult, onlineResult] = await Promise.allSettled([
-    searchMealFlowCatalog(clean),
-    searchTheMealDb(clean),
-  ]);
+async function searchWeb(query: string, filters: RecipeFilters, page: number): Promise<{ recipes: Recipe[]; hasMore: boolean; configured: boolean }> {
+  if (!query.trim()) return { recipes: [], hasMore: false, configured: true };
 
-  const catalog = catalogResult.status === 'fulfilled' ? catalogResult.value : [];
-  const online = onlineResult.status === 'fulfilled' ? onlineResult.value : [];
-  if (!catalog.length && !online.length && catalogResult.status === 'rejected' && onlineResult.status === 'rejected') {
-    throw catalogResult.reason ?? onlineResult.reason;
+  const { data, error } = await supabase.functions.invoke('recipe-web-search', {
+    body: {
+      query: query.trim(),
+      page,
+      maxMinutes: filters.maxMinutes ?? null,
+      vegetarianOnly: Boolean(filters.vegetarianOnly),
+      ingredient: filters.ingredient?.trim() ?? '',
+    },
+  });
+
+  if (error) {
+    // The app remains useful with the structured fallback sources until the
+    // server-side web-search provider has been configured.
+    return { recipes: [], hasMore: false, configured: false };
   }
 
+  const recipes = (Array.isArray(data?.results) ? data.results : []).map((row: any): Recipe => ({
+    id: String(row.id),
+    title: String(row.title || 'Rezept'),
+    image: row.image ? String(row.image) : undefined,
+    source: String(row.source || 'Web'),
+    sourceKind: 'web',
+    url: row.url ? String(row.url) : undefined,
+    description: row.description ? String(row.description) : undefined,
+    ingredients: [],
+  }));
+
+  return {
+    recipes,
+    hasMore: Boolean(data?.hasMore),
+    configured: data?.configured !== false,
+  };
+}
+
+function dedupe(recipes: Recipe[]) {
   const seen = new Set<string>();
-  const merged = [...catalog, ...online].filter((recipe) => {
-    const key = recipeKey(recipe.title);
+  return recipes.filter((recipe) => {
+    const key = recipe.url ? `url:${normalizeText(recipe.url)}` : `title:${recipeKey(recipe.title)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
 
-  return applyFilters(merged, filters).slice(0, 30);
+export async function searchRecipePage(query: string, filters: RecipeFilters = {}, page = 0): Promise<RecipeSearchPage> {
+  const clean = query.trim();
+  const safePage = Math.max(0, page);
+
+  if (!clean) {
+    const catalog = await searchMealFlowCatalog('');
+    return {
+      recipes: applyFilters(dedupe(catalog), filters),
+      page: 0,
+      hasMore: false,
+      webConfigured: true,
+    };
+  }
+
+  if (safePage > 0) {
+    const web = await searchWeb(clean, filters, safePage);
+    return {
+      recipes: applyFilters(dedupe(web.recipes), filters),
+      page: safePage,
+      hasMore: web.hasMore,
+      webConfigured: web.configured,
+    };
+  }
+
+  const [webResult, catalogResult, onlineResult] = await Promise.allSettled([
+    searchWeb(clean, filters, 0),
+    searchMealFlowCatalog(clean),
+    searchTheMealDb(clean),
+  ]);
+
+  const web = webResult.status === 'fulfilled'
+    ? webResult.value
+    : { recipes: [] as Recipe[], hasMore: false, configured: false };
+  const catalog = catalogResult.status === 'fulfilled' ? catalogResult.value : [];
+  const online = onlineResult.status === 'fulfilled' ? onlineResult.value : [];
+
+  if (!web.recipes.length && !catalog.length && !online.length && catalogResult.status === 'rejected' && onlineResult.status === 'rejected') {
+    throw catalogResult.reason ?? onlineResult.reason;
+  }
+
+  // Web results come first for Google-like discovery. Structured MealFlow/TheMealDB
+  // results are still mixed in because they can be added to the shopping list directly.
+  const merged = applyFilters(dedupe([...web.recipes, ...catalog, ...online]), filters);
+
+  return {
+    recipes: merged,
+    page: 0,
+    hasMore: web.hasMore,
+    webConfigured: web.configured,
+  };
+}
+
+export async function searchRecipes(query: string, filters: RecipeFilters = {}): Promise<Recipe[]> {
+  const result = await searchRecipePage(query, filters, 0);
+  return result.recipes;
 }
 
 export function getSeasonalQuickSearch() {
