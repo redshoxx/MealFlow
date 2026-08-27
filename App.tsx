@@ -56,6 +56,7 @@ import { isCloudConfigured, supabase } from './src/lib/supabase';
 import { ActionButton, EmptyState, IconButton, refreshUiComponentStyles, ScreenHeader, SectionTitle, SurfaceCard } from './src/ui/components';
 import { colors, getShadow, radius, setThemePalette, spacing, typography } from './src/ui/theme';
 import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';
+import { NutritionScreen, refreshNutritionStyles } from './src/screens/NutritionScreen';
 import appConfig from './app.json';
 
 const DAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
@@ -422,7 +423,7 @@ function SettingsSheet({
     { key: 'heute', label: 'Heute' },
     { key: 'woche', label: 'Woche' },
     { key: 'einkauf', label: 'Einkauf' },
-    { key: 'rezepte', label: 'Rezepte' },
+    { key: 'kalorien', label: 'Kalorien' },
   ];
 
   return (
@@ -485,7 +486,7 @@ function HomeScreen({ household, meals, items, history, onNavigate, onSettings, 
       </SurfaceCard>
       <View style={styles.metricsRow}><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="calendar-check-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{planned}/7</Text><Text style={styles.metricLabel}>nächste Woche geplant</Text></SurfaceCard><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="cart-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{openItems}</Text><Text style={styles.metricLabel}>offene Einkäufe</Text></SurfaceCard></View>
       <SectionTitle title="Schnellzugriff" />
-      <View style={styles.quickGrid}><Pressable style={styles.quickAction} onPress={() => onNavigate('woche')}><View style={styles.quickIcon}><MaterialCommunityIcons name="calendar-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Woche planen</Text><Text style={styles.quickText}>Abendessen gemeinsam festlegen.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Einkauf ergänzen</Text><Text style={styles.quickText}>Jeder im Haushalt sieht Änderungen sofort.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('rezepte')}><View style={styles.quickIcon}><MaterialCommunityIcons name="chef-hat" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Rezept finden</Text><Text style={styles.quickText}>Beliebte Web-Rezepte, Filter und Kochverlauf nutzen.</Text></Pressable></View>
+      <View style={styles.quickGrid}><Pressable style={styles.quickAction} onPress={() => onNavigate('woche')}><View style={styles.quickIcon}><MaterialCommunityIcons name="calendar-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Woche planen</Text><Text style={styles.quickText}>Abendessen gemeinsam festlegen.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Einkauf ergänzen</Text><Text style={styles.quickText}>Jeder im Haushalt sieht Änderungen sofort.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('kalorien')}><View style={styles.quickIcon}><MaterialCommunityIcons name="chart-donut" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Kalorien</Text><Text style={styles.quickText}>Persönliche Tagesbilanz und Lebensmittel per Barcode erfassen.</Text></Pressable></View>
     </ScrollView>
   );
 }
@@ -869,7 +870,12 @@ function DayPicker({ selection, onClose, onSelect }: { selection: RecipeSelectio
 }
 
 function TabBar({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
-  const tabs: { key: Tab; label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; active: React.ComponentProps<typeof MaterialCommunityIcons>['name'] }[] = [{ key: 'heute', label: 'Heute', icon: 'home-variant-outline', active: 'home-variant' }, { key: 'woche', label: 'Woche', icon: 'calendar-week-outline', active: 'calendar-week' }, { key: 'einkauf', label: 'Einkauf', icon: 'cart-outline', active: 'cart' }, { key: 'rezepte', label: 'Rezepte', icon: 'silverware-fork-knife', active: 'silverware-fork-knife' }];
+  const tabs: { key: Tab; label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; active: React.ComponentProps<typeof MaterialCommunityIcons>['name'] }[] = [
+    { key: 'heute', label: 'Heute', icon: 'home-variant-outline', active: 'home-variant' },
+    { key: 'woche', label: 'Woche', icon: 'calendar-week-outline', active: 'calendar-week' },
+    { key: 'einkauf', label: 'Einkauf', icon: 'cart-outline', active: 'cart' },
+    { key: 'kalorien', label: 'Kalorien', icon: 'chart-donut-variant', active: 'chart-donut' },
+  ];
   return <View style={styles.tabBar}>{tabs.map((item) => { const active = tab === item.key; return <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => onChange(item.key)} style={styles.tabItem}><MaterialCommunityIcons name={active ? item.active : item.icon} size={23} color={active ? colors.accent : colors.textTertiary} /><Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{item.label}</Text></Pressable>; })}</View>;
 }
 
@@ -1020,7 +1026,7 @@ function MainApp() {
         {tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
         {tab === 'woche' ? <PlanScreen household={household} meals={meals} setMeals={setMeals} onSettings={() => setSettingsOpen(true)} /> : null}
         {tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setItems} preferences={preferences} onSettings={() => setSettingsOpen(true)} /> : null}
-        {tab === 'rezepte' ? <RecipesScreen ownRecipes={ownRecipes} setOwnRecipes={setOwnRecipes} history={history} meals={meals} onAddIngredients={addRecipeIngredients} onPlan={setRecipeToPlan} onSettings={() => setSettingsOpen(true)} /> : null}
+        {tab === 'kalorien' ? <NutritionScreen onSettings={() => setSettingsOpen(true)} hapticsEnabled={preferences.hapticsEnabled} /> : null}
       </View>
       <View style={{ paddingBottom: Math.max(insets.bottom, 8), backgroundColor: colors.surface }}><TabBar tab={tab} onChange={changeTab} /></View>
       <SettingsSheet visible={settingsOpen} email={email} household={household} pendingInvites={invitations.length} preferences={preferences} darkMode={darkMode} onPreferencesChange={updatePreferences} onClose={() => setSettingsOpen(false)} onHousehold={() => { setSettingsOpen(false); setHouseholdOpen(true); }} />
@@ -1146,5 +1152,6 @@ let styles = createStyles();
 function refreshAppStyles() {
   styles = createStyles();
   refreshUiComponentStyles();
+  refreshNutritionStyles();
 }
 

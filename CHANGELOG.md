@@ -1,5 +1,19 @@
 # MealFlow Changelog
 
+## 2.2.0
+
+- Rezeptseite aus der Hauptnavigation entfernt und durch einen persönlichen Kalorienzähler ersetzt.
+- Individuelle Ernährungseinträge und Tagesziele pro Benutzer mit eigener Supabase-RLS eingeführt.
+- Professionelle Tagesübersicht mit verbleibenden Kalorien, Tagesziel und Makro-Fortschritt.
+- Frühstück, Mittagessen, Abendessen und Snacks als übersichtliche getrennte Bereiche.
+- Barcode-Scanner über expo-camera für EAN-13, EAN-8 und UPC-Barcodes.
+- Produktdaten, Produktbilder und Nährwerte werden nach dem Scan über Open Food Facts geladen.
+- Mengenänderung berechnet Kalorien, Eiweiß, Kohlenhydrate und Fett live auf die gewählte Portion um.
+- Persönliche Kalorien- und Makroziele können direkt in der Kalorienansicht angepasst werden.
+- Datumsnavigation ermöglicht das Anzeigen vergangener Ernährungstage.
+- Startseiten-Einstellung „Rezepte“ wird automatisch auf „Kalorien“ migriert.
+- App-Version 2.2.0, iOS Build 12, Android Version Code 12.
+
 ## 2.1.5
 
 - Wochenplan auf die kommende Woche umgestellt und datumsbasiert gespeichert, damit Wochen nicht mehr kollidieren.
