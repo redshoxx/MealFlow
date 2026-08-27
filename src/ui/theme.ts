@@ -17,7 +17,7 @@ export const lightColors = {
   dangerSoft: '#F8EAEA',
   warning: '#9B6B20',
   shadow: '#111111',
-  overlay: 'rgba(15, 20, 16, 0.28)',
+  overlay: 'rgba(28, 34, 29, 0.10)',
 };
 
 export const darkColors = {
@@ -35,12 +35,52 @@ export const darkColors = {
   dangerSoft: '#3A2020',
   warning: '#E1B86E',
   shadow: '#000000',
-  overlay: 'rgba(0, 0, 0, 0.46)',
+  overlay: 'rgba(0, 0, 0, 0.18)',
+};
+
+export const cozyLightColors = {
+  background: '#F7F0E6',
+  surface: '#FFF9F1',
+  surfaceMuted: '#F0E4D5',
+  text: '#2C251E',
+  textSecondary: '#74685B',
+  textTertiary: '#988A7B',
+  border: '#E7D8C7',
+  accent: '#9A6545',
+  accentSoft: '#F0DFD0',
+  accentStrong: '#74472F',
+  danger: '#A94D4D',
+  dangerSoft: '#F6E3DE',
+  warning: '#9B6B20',
+  shadow: '#4A3528',
+  overlay: 'rgba(79, 58, 43, 0.09)',
+};
+
+export const cozyDarkColors = {
+  background: '#17130F',
+  surface: '#211B16',
+  surfaceMuted: '#2B231C',
+  text: '#F6EEE5',
+  textSecondary: '#C6B7A8',
+  textTertiary: '#938477',
+  border: '#3B3027',
+  accent: '#D39A73',
+  accentSoft: '#3A291F',
+  accentStrong: '#E7B48E',
+  danger: '#F08A84',
+  dangerSoft: '#3A211D',
+  warning: '#E0B670',
+  shadow: '#000000',
+  overlay: 'rgba(0, 0, 0, 0.16)',
 };
 
 export const colors = { ...lightColors };
 
-export function setThemePalette(palette: ThemePaletteName) {
+export function setThemePalette(palette: ThemePaletteName, cozy = false) {
+  if (cozy) {
+    Object.assign(colors, palette === 'dark' ? cozyDarkColors : cozyLightColors);
+    return;
+  }
   Object.assign(colors, palette === 'dark' ? darkColors : lightColors);
 }
 
@@ -112,12 +152,12 @@ export function getShadow() {
   return Platform.select({
     ios: {
       shadowColor: colors.shadow,
-      shadowOpacity: 0.05,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.035,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
     },
     android: {
-      elevation: 1,
+      elevation: 0,
     },
     default: {},
   }) ?? {};
