@@ -1,0 +1,110 @@
+name: Apply open web recipe discovery UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/patch-recipe-web-discovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Patch MealFlow recipe discovery
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('App.tsx')
+          text = path.read_text()
+
+          replacements = []
+
+          replacements.append((
+            "import { getSeasonalQuickSearch, searchRecipes, type Recipe, type RecipeFilters } from './src/lib/recipes';",
+            "import { getSeasonalQuickSearch, searchRecipePage, searchRecipes, type Recipe, type RecipeFilters } from './src/lib/recipes';"
+          ))
+
+          replacements.append((
+            "  const [mode, setMode] = useState<'entdecken' | 'eigene'>('entdecken'); const [query, setQuery] = useState(''); const [loading, setLoading] = useState(false); const [recipes, setRecipes] = useState<Recipe[]>([]); const [selected, setSelected] = useState<RecipeSelection | null>(null); const [editorOpen, setEditorOpen] = useState(false); const [filterOpen, setFilterOpen] = useState(false); const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS);",
+            "  const [mode, setMode] = useState<'entdecken' | 'eigene'>('entdecken'); const [query, setQuery] = useState(''); const [loading, setLoading] = useState(false); const [loadingMore, setLoadingMore] = useState(false); const [recipes, setRecipes] = useState<Recipe[]>([]); const [selected, setSelected] = useState<RecipeSelection | null>(null); const [editorOpen, setEditorOpen] = useState(false); const [filterOpen, setFilterOpen] = useState(false); const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS); const [page, setPage] = useState(0); const [hasMore, setHasMore] = useState(false); const [webConfigured, setWebConfigured] = useState(true);"
+          ))
+
+          old_run = "  const runSearch = async (term = query, nextFilters = filters) => { const clean = term.trim(); setQuery(clean); setLoading(true); try { const apiFilters: RecipeFilters = { maxMinutes: nextFilters.maxMinutes, vegetarianOnly: nextFilters.vegetarianOnly, ingredient: nextFilters.ingredient, excludeTitles: nextFilters.excludeThisWeek ? Object.values(meals).filter(Boolean) : [] }; const result = await searchRecipes(clean, apiFilters); setRecipes(result); if (!result.length) Alert.alert('Keine Treffer', 'Mit diesen Suchbegriffen und Filtern wurden keine passenden Rezepte gefunden.'); } catch (error: any) { Alert.alert('Rezeptsuche nicht möglich', germanError(error?.message)); } finally { setLoading(false); } };"
+          new_run = "  const makeApiFilters = (nextFilters = filters): RecipeFilters => ({ maxMinutes: nextFilters.maxMinutes, vegetarianOnly: nextFilters.vegetarianOnly, ingredient: nextFilters.ingredient, excludeTitles: nextFilters.excludeThisWeek ? Object.values(meals).filter(Boolean) : [] });\n  const runSearch = async (term = query, nextFilters = filters) => { const clean = term.trim(); setQuery(clean); setLoading(true); setPage(0); try { const result = await searchRecipePage(clean, makeApiFilters(nextFilters), 0); setRecipes(result.recipes); setHasMore(result.hasMore); setWebConfigured(result.webConfigured); if (!result.recipes.length) Alert.alert('Keine Treffer', 'Mit diesen Suchbegriffen und Filtern wurden keine passenden Rezepte gefunden.'); } catch (error: any) { Alert.alert('Rezeptsuche nicht möglich', germanError(error?.message)); } finally { setLoading(false); } };\n  const loadMore = async () => { if (!hasMore || loading || loadingMore || !query.trim()) return; const nextPage = page + 1; setLoadingMore(true); try { const result = await searchRecipePage(query, makeApiFilters(), nextPage); setRecipes((current) => { const seen = new Set(current.map((recipe) => recipe.url || recipe.id)); return [...current, ...result.recipes.filter((recipe) => !seen.has(recipe.url || recipe.id))]; }); setPage(nextPage); setHasMore(result.hasMore); setWebConfigured(result.webConfigured); } catch (error: any) { Alert.alert('Weitere Rezepte konnten nicht geladen werden', germanError(error?.message)); setHasMore(false); } finally { setLoadingMore(false); } };"
+          replacements.append((old_run, new_run))
+
+          replacements.append((
+            "  useEffect(() => { searchRecipes('', { excludeTitles: Object.values(meals).filter(Boolean) }).then(setRecipes).catch(() => undefined); }, []);",
+            "  useEffect(() => { searchRecipes('', { excludeTitles: Object.values(meals).filter(Boolean) }).then((result) => { setRecipes(result); setHasMore(false); }).catch(() => undefined); }, []);"
+          ))
+
+          replacements.append((
+            "return <><ScrollView keyboardShouldPersistTaps=\"handled\" contentInsetAdjustmentBehavior=\"automatic\" contentContainerStyle={styles.screenContent}><ScreenHeader title=\"Rezepte\" subtitle=\"Österreichische Ideen, Online-Rezepte und eure eigenen Favoriten.\"",
+            "return <><ScrollView keyboardShouldPersistTaps=\"handled\" contentInsetAdjustmentBehavior=\"automatic\" contentContainerStyle={styles.screenContent} onScroll={({ nativeEvent }) => { const nearBottom = nativeEvent.layoutMeasurement.height + nativeEvent.contentOffset.y >= nativeEvent.contentSize.height - 320; if (nearBottom) loadMore(); }} scrollEventThrottle={300}><ScreenHeader title=\"Rezepte\" subtitle=\"Wie eine Rezept-Suchmaschine: im Web entdecken, vergleichen und direkt einplanen.\""
+          ))
+
+          replacements.append((
+            "<View style={styles.sourceHint}><MaterialCommunityIcons name=\"database-search-outline\" size={18} color={colors.accent} /><Text style={styles.sourceHintText}>MealFlow AT/DE + TheMealDB · Filter nach Zeit, vegetarisch und vorhandener Zutat</Text></View>",
+            "<View style={styles.sourceHint}><MaterialCommunityIcons name=\"web\" size={18} color={colors.accent} /><Text style={styles.sourceHintText}>{webConfigured ? 'Web-Rezeptsuche + MealFlow AT/DE + TheMealDB · beim Scrollen werden weitere Treffer geladen' : 'MealFlow AT/DE + TheMealDB · Web-Rezeptsuche ist serverseitig noch nicht aktiviert'}</Text></View>"
+          ))
+
+          replacements.append((
+            "<Text style={styles.recipeSource}>{recipe.sourceKind === 'mealflow' ? 'AT/DE' : 'ONLINE'}</Text>",
+            "<Text style={styles.recipeSource}>{recipe.sourceKind === 'mealflow' ? 'AT/DE' : recipe.sourceKind === 'web' ? (recipe.source || 'WEB') : 'ONLINE'}</Text>"
+          ))
+
+          replacements.append((
+            "<Text style={styles.recipeCardMeta}>{[recipe.minutes ? `${recipe.minutes} Min` : null, recipe.vegetarian ? 'Vegetarisch' : null, last ? lastCookedLabel(last) : null].filter(Boolean).join(' · ') || `${recipe.ingredients.length} Zutaten`}</Text>",
+            "<Text style={styles.recipeCardMeta} numberOfLines={3}>{recipe.sourceKind === 'web' ? (recipe.description || 'Web-Rezept öffnen und ansehen') : ([recipe.minutes ? `${recipe.minutes} Min` : null, recipe.vegetarian ? 'Vegetarisch' : null, last ? lastCookedLabel(last) : null].filter(Boolean).join(' · ') || `${recipe.ingredients.length} Zutaten`)}</Text>"
+          ))
+
+          replacements.append((
+            "</View>{!loading && !recipes.length ? <SurfaceCard><EmptyState icon=\"chef-hat\" title=\"Keine Rezepte gefunden\" text=\"Passe Suchbegriff oder Filter an.\" /></SurfaceCard> : null}</>",
+            "</View>{loadingMore ? <View style={styles.loadingBox}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Weitere Rezepte werden geladen …</Text></View> : null}{!loading && !loadingMore && hasMore ? <Text style={styles.loadingText}>Weiter scrollen für mehr Treffer</Text> : null}{!loading && !recipes.length ? <SurfaceCard><EmptyState icon=\"chef-hat\" title=\"Keine Rezepte gefunden\" text=\"Passe Suchbegriff oder Filter an.\" /></SurfaceCard> : null}</>"
+          ))
+
+          replacements.append((
+            "recipe?.sourceKind === 'mealflow' ? 'MEALFLOW · AT/DE' : 'ONLINE-REZEPT'",
+            "recipe?.sourceKind === 'mealflow' ? 'MEALFLOW · AT/DE' : recipe?.sourceKind === 'web' ? `WEB · ${recipe.source || 'REZEPTQUELLE'}` : 'ONLINE-REZEPT'"
+          ))
+
+          replacements.append((
+            "<SectionTitle title=\"Zutaten\" /><SurfaceCard style={styles.ingredientsCard}>{ingredients.map((ingredient, index) => <View key={`${ingredient}-${index}`} style={styles.ingredientRow}><View style={styles.ingredientDot} /><Text style={styles.ingredientText}>{ingredient}</Text></View>)}</SurfaceCard>",
+            "{ingredients.length ? <><SectionTitle title=\"Zutaten\" /><SurfaceCard style={styles.ingredientsCard}>{ingredients.map((ingredient, index) => <View key={`${ingredient}-${index}`} style={styles.ingredientRow}><View style={styles.ingredientDot} /><Text style={styles.ingredientText}>{ingredient}</Text></View>)}</SurfaceCard></> : recipe?.sourceKind === 'web' ? <SurfaceCard style={styles.instructionsCard}><Text style={styles.instructionsText}>Dieses Rezept stammt aus der Web-Suche. Öffne die Originalseite für Zutaten, Mengen und die vollständige Zubereitung.</Text></SurfaceCard> : null}"
+          ))
+
+          replacements.append((
+            "<ActionButton label=\"Zutaten zur Einkaufsliste\" icon=\"cart-plus\" onPress={() => onAddIngredients(selection)} /><ActionButton label=\"Als Abendessen einplanen\" icon=\"calendar-plus\" variant=\"secondary\" onPress={() => onPlan(selection)} />{recipe?.url ? <ActionButton label=\"Originalquelle öffnen\" icon=\"open-in-new\" variant=\"ghost\" onPress={() => Linking.openURL(recipe.url!).catch(() => undefined)} /> : null}",
+            "{ingredients.length ? <ActionButton label=\"Zutaten zur Einkaufsliste\" icon=\"cart-plus\" onPress={() => onAddIngredients(selection)} /> : null}<ActionButton label=\"Als Abendessen einplanen\" icon=\"calendar-plus\" variant=\"secondary\" onPress={() => onPlan(selection)} />{recipe?.url ? <ActionButton label={recipe.sourceKind === 'web' ? 'Rezept auf Website ansehen' : 'Originalquelle öffnen'} icon=\"open-in-new\" variant={recipe.sourceKind === 'web' ? 'primary' : 'ghost'} onPress={() => Linking.openURL(recipe.url!).catch(() => undefined)} /> : null}"
+          ))
+
+          for old, new in replacements:
+            if old not in text:
+              raise SystemExit(f'Missing expected App.tsx fragment:\n{old[:240]}')
+            text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Typecheck patched UI
+        run: |
+          npm install --ignore-scripts
+          npm run typecheck
+
+      - name: Commit patch and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/patch-recipe-web-discovery.yml
+          git add App.tsx
+          git commit -m "Make recipe discovery web-scale and scrollable"
+          git pull --rebase origin main
+          git push origin main
