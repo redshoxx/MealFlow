@@ -65,7 +65,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/apply-2-1-5.yml .github/workflows/recover-2-1-5.yml
-          git add App.tsx src/lib/cloud.ts app.json package.json CHANGELOG.md
+          git add App.tsx src/lib/cloud.ts app.json package.json package-lock.json CHANGELOG.md
           git commit -m "Build MealFlow 2.1.5 performance and cozy update"
           git pull --rebase origin main
           git push origin main
