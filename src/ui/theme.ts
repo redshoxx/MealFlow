@@ -51,7 +51,7 @@ export const typography = {
   h2: {
     fontSize: 22,
     lineHeight: 28,
-    fontWeight: '750' as const,
+    fontWeight: '700' as const,
     letterSpacing: -0.25,
   },
   title: {
@@ -67,7 +67,7 @@ export const typography = {
   bodyStrong: {
     fontSize: 16,
     lineHeight: 23,
-    fontWeight: '650' as const,
+    fontWeight: '600' as const,
   },
   caption: {
     fontSize: 13,
