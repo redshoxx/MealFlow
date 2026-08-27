@@ -1,5 +1,20 @@
 # MealFlow Changelog
 
+## 2.2.1
+
+- Kalorienseite aus der Hauptnavigation entfernt und durch den gemeinsamen Vorrat ersetzt.
+- Erledigte Einkäufe erscheinen automatisch im Bereich „Nach dem Einkauf“.
+- Gekaufte Produkte werden klar als „noch zu scannen“ oder bereits erfasst angezeigt.
+- Barcode-Scanner erkennt Produkte über Open Food Facts und übernimmt Name, Marke und Bild.
+- Gescannte Einkaufsprodukte werden dauerhaft als in den Vorrat übernommen markiert.
+- Menge und Einheit werden beim Übernehmen festgelegt und können später bearbeitet werden.
+- Optionales Mindesthaltbarkeitsdatum mit Hinweisen für bald fällige oder überschrittene MHDs.
+- Produkte können jederzeit vollständig manuell und ohne Barcode angelegt werden.
+- Vorratsprodukte können gesucht, bearbeitet und nach Verbrauch entfernt werden.
+- Vorrat ist für alle Mitglieder des aktiven MealFlow-Haushalts synchronisiert.
+- Startseiten-Einstellung „Kalorien“ wird automatisch auf „Vorrat“ migriert.
+- App-Version 2.2.1, iOS Build 13, Android Version Code 13.
+
 ## 2.2.0
 
 - Rezeptseite aus der Hauptnavigation entfernt und durch einen persönlichen Kalorienzähler ersetzt.
