@@ -3,6 +3,7 @@
 ## 2.1.5
 
 - Wochenplan auf die kommende Woche umgestellt und datumsbasiert gespeichert, damit Wochen nicht mehr kollidieren.
+- Der gemeinsame Realtime-Wochenplan verwendet Haushalt + Datum als eindeutige Zuordnung.
 - Bottom-Sheets leichter und flüssiger dargestellt; dunkler Schatten deutlich reduziert.
 - Bottom-Sheets können über den Griff nach unten geschlossen werden.
 - Rezept-Editor und Rezeptdetails respektieren die iPhone-Safe-Area vollständig.
