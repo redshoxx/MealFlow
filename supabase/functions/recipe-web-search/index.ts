@@ -33,6 +33,20 @@ function sourceName(url: string) {
   }
 }
 
+function cleanText(value: unknown) {
+  return String(value ?? "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+}
+
+function allowedUrl(url: string) {
+  if (!/^https?:\/\//i.test(url)) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return !blockedHosts.some((blocked) => host.includes(blocked));
+  } catch {
+    return false;
+  }
+}
+
 function buildQuery(input: {
   query: string;
   maxMinutes?: number | null;
@@ -46,40 +60,56 @@ function buildQuery(input: {
   return parts.join(" ").trim();
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
-
-  const apiKey = Deno.env.get("BRAVE_SEARCH_API_KEY");
-  if (!apiKey) {
-    return json({
-      error: "WEB_SEARCH_NOT_CONFIGURED",
-      message: "Die Web-Rezeptsuche ist noch nicht konfiguriert.",
-      configured: false,
-      results: [],
-      hasMore: false,
-    }, 503);
-  }
-
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return json({ error: "INVALID_JSON" }, 400);
-  }
-
-  const query = String(body?.query ?? "").trim();
-  if (!query) return json({ results: [], hasMore: false, configured: true, page: 0 });
-  if (query.length > 240) return json({ error: "QUERY_TOO_LONG" }, 400);
-
-  const page = Math.max(0, Math.min(9, Number(body?.page ?? 0) || 0));
-  const searchQuery = buildQuery({
-    query,
-    maxMinutes: body?.maxMinutes == null ? null : Number(body.maxMinutes),
-    vegetarianOnly: Boolean(body?.vegetarianOnly),
-    ingredient: String(body?.ingredient ?? ""),
+async function searchSerper(apiKey: string, searchQuery: string, page: number) {
+  const response = await fetch("https://google.serper.dev/search", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-KEY": apiKey,
+    },
+    body: JSON.stringify({
+      q: searchQuery,
+      gl: "at",
+      hl: "de",
+      num: 20,
+      page: page + 1,
+      autocorrect: true,
+    }),
   });
 
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw Object.assign(new Error("SERPER_FAILED"), { status: response.status, detail });
+  }
+
+  const payload = await response.json();
+  const organic = Array.isArray(payload?.organic) ? payload.organic : [];
+  const results = organic
+    .filter((result: any) => allowedUrl(String(result?.link ?? "")))
+    .map((result: any, index: number) => {
+      const url = String(result.link);
+      return {
+        id: `serper:${page}:${index}:${url}`,
+        title: cleanText(result?.title || "Rezept"),
+        description: cleanText(result?.snippet || result?.attributes?.description || ""),
+        image: result?.imageUrl ? String(result.imageUrl) : undefined,
+        source: cleanText(result?.source || sourceName(url)),
+        sourceKind: "web",
+        url,
+        ingredients: [],
+      };
+    });
+
+  return {
+    provider: "serper",
+    results,
+    // Serper supports page-based pagination. Continue while a full-ish result page is returned.
+    hasMore: organic.length >= 8,
+  };
+}
+
+async function searchBrave(apiKey: string, searchQuery: string, logicalPage: number) {
+  const page = Math.max(0, Math.min(9, logicalPage));
   const params = new URLSearchParams({
     q: searchQuery,
     count: "20",
@@ -104,42 +134,101 @@ Deno.serve(async (req: Request) => {
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    return json({
-      error: "WEB_SEARCH_FAILED",
-      status: response.status,
-      message: "Die Web-Rezeptsuche ist gerade nicht erreichbar.",
-      detail: detail.slice(0, 300),
-    }, response.status === 429 ? 429 : 502);
+    throw Object.assign(new Error("BRAVE_FAILED"), { status: response.status, detail });
   }
 
   const payload = await response.json();
   const rawResults = Array.isArray(payload?.web?.results) ? payload.web.results : [];
   const results = rawResults
-    .filter((result: any) => {
-      const url = String(result?.url ?? "");
-      if (!/^https?:\/\//i.test(url)) return false;
-      const host = (() => { try { return new URL(url).hostname.toLowerCase(); } catch { return ""; } })();
-      return !blockedHosts.some((blocked) => host.includes(blocked));
-    })
+    .filter((result: any) => allowedUrl(String(result?.url ?? "")))
     .map((result: any, index: number) => {
       const url = String(result.url);
       const thumbnail = result?.thumbnail?.src || result?.thumbnail?.original || undefined;
       return {
-        id: `web:${page}:${index}:${url}`,
-        title: String(result?.title ?? "Rezept").replace(/<[^>]+>/g, "").trim(),
-        description: String(result?.description ?? result?.extra_snippets?.[0] ?? "").replace(/<[^>]+>/g, "").trim(),
+        id: `brave:${page}:${index}:${url}`,
+        title: cleanText(result?.title || "Rezept"),
+        description: cleanText(result?.description || result?.extra_snippets?.[0] || ""),
         image: thumbnail ? String(thumbnail) : undefined,
-        source: String(result?.profile?.long_name || sourceName(url)),
+        source: cleanText(result?.profile?.long_name || sourceName(url)),
         sourceKind: "web",
         url,
         ingredients: [],
       };
     });
 
-  return json({
-    configured: true,
-    page,
+  return {
+    provider: "brave",
     results,
     hasMore: Boolean(payload?.query?.more_results_available) && page < 9,
+  };
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "INVALID_JSON" }, 400);
+  }
+
+  const query = String(body?.query ?? "").trim();
+  if (!query) return json({ results: [], hasMore: false, configured: true, page: 0 });
+  if (query.length > 240) return json({ error: "QUERY_TOO_LONG" }, 400);
+
+  const page = Math.max(0, Number(body?.page ?? 0) || 0);
+  const searchQuery = buildQuery({
+    query,
+    maxMinutes: body?.maxMinutes == null ? null : Number(body.maxMinutes),
+    vegetarianOnly: Boolean(body?.vegetarianOnly),
+    ingredient: String(body?.ingredient ?? ""),
   });
+
+  const serperKey = Deno.env.get("SERPER_API_KEY");
+  const braveKey = Deno.env.get("BRAVE_SEARCH_API_KEY");
+
+  if (!serperKey && !braveKey) {
+    return json({
+      error: "WEB_SEARCH_NOT_CONFIGURED",
+      message: "Die Web-Rezeptsuche ist noch nicht konfiguriert.",
+      configured: false,
+      results: [],
+      hasMore: false,
+    }, 503);
+  }
+
+  try {
+    const result = serperKey
+      ? await searchSerper(serperKey, searchQuery, page)
+      : await searchBrave(braveKey!, searchQuery, page);
+
+    return json({
+      configured: true,
+      provider: result.provider,
+      page,
+      results: result.results,
+      hasMore: result.hasMore,
+    });
+  } catch (error: any) {
+    // If Serper is temporarily unavailable and Brave is configured as a second provider,
+    // fall back without surfacing an error to the mobile app.
+    if (serperKey && braveKey) {
+      try {
+        const fallback = await searchBrave(braveKey, searchQuery, page);
+        return json({ configured: true, provider: fallback.provider, page, results: fallback.results, hasMore: fallback.hasMore });
+      } catch {
+        // Fall through to the common error response below.
+      }
+    }
+
+    const status = Number(error?.status ?? 502);
+    return json({
+      error: "WEB_SEARCH_FAILED",
+      status,
+      message: status === 429 ? "Das Suchkontingent ist gerade ausgeschöpft." : "Die Web-Rezeptsuche ist gerade nicht erreichbar.",
+      detail: String(error?.detail ?? "").slice(0, 300),
+    }, status === 429 ? 429 : 502);
+  }
 });
