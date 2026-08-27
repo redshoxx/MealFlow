@@ -1,5 +1,19 @@
 # MealFlow Changelog
 
+## 2.2.2
+
+- Einkaufsliste: Löschgeste mit flüssigem Ausblenden und Zusammenklappen statt abruptem Entfernen.
+- MHD-Warnungen für Produkte, die in den nächsten drei Tagen ablaufen.
+- Produkte mit heutigem oder überschrittenem MHD werden deutlich rot hervorgehoben.
+- Lokale iOS-/Android-Benachrichtigungen einige Tage vor dem MHD und am Ablaufdatum.
+- Vorratsseite minimalistischer und auf Scannen, offene Einkäufe, MHD und vorhandene Produkte reduziert.
+- Heute-Übersicht zeigt bis zu drei bald ablaufende Vorratsprodukte.
+- Spracheingabe versteht strukturierte Angaben wie „2 Liter Milch“, „500 Gramm Nudeln“ oder „3 Packungen Joghurt“.
+- Startbildschirm mit echtem Ladefortschritt von 0 bis 100 Prozent entlang der geladenen Datenphasen und kurzer Mindestanzeige.
+- Vorrats-Realtime-Updates entprellt, parallele Refreshes verhindert und Datenabfragen begrenzt.
+- Open-Food-Facts-Abrufe mit Timeout, Barcode-Validierung, HTTPS-Bildvalidierung und begrenzten Text-/Mengenwerten gehärtet.
+- App-Version 2.2.2, iOS Build 14, Android Version Code 14.
+
 ## 2.2.1
 
 - Kalorienseite aus der Hauptnavigation entfernt und durch den gemeinsamen Vorrat ersetzt.

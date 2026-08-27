@@ -57,6 +57,8 @@ import { ActionButton, EmptyState, IconButton, refreshUiComponentStyles, ScreenH
 import { colors, getShadow, radius, setThemePalette, spacing, typography } from './src/ui/theme';
 import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';
 import { InventoryScreen, refreshInventoryStyles } from './src/screens/InventoryScreen';
+import { loadPantry, type PantryItem } from './src/lib/inventory';
+import { getUrgentPantry, syncExpiryNotifications } from './src/lib/expiryNotifications';
 import appConfig from './app.json';
 
 const DAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
@@ -90,6 +92,32 @@ function germanError(message?: string) {
 
 function formatAmount(value: number) {
   return String(value).replace('.5', ',5');
+}
+
+function parseSpokenShopping(value: string) {
+  const clean = value.trim().replace(/\s+/g, ' ');
+  if (!clean) return { name: '' } as { name: string; amount?: number; unit?: string };
+  const numberWords: Record<string, number> = { ein: 1, eine: 1, einen: 1, eins: 1, zwei: 2, drei: 3, vier: 4, fünf: 5, fuenf: 5, sechs: 6, sieben: 7, acht: 8, neun: 9, zehn: 10, halb: 0.5 };
+  const firstMatch = clean.match(/^([^ ]+)\s+(.+)$/);
+  if (!firstMatch) return { name: clean };
+  const amountToken = (firstMatch[1] ?? '').toLocaleLowerCase('de-AT');
+  const numeric = Number(amountToken.replace(',', '.'));
+  const parsedAmount = Number.isFinite(numeric) ? numeric : (numberWords[amountToken] ?? 0);
+  if (!(parsedAmount > 0)) return { name: clean };
+  const remainder = firstMatch[2] ?? '';
+  const units: Array<[RegExp, string]> = [
+    [/^(liter|litern|l)\b\s*/i, 'l'], [/^(milliliter|millilitern|ml)\b\s*/i, 'ml'],
+    [/^(kilogramm|kilo|kg)\b\s*/i, 'kg'], [/^(gramm|gram|g)\b\s*/i, 'g'],
+    [/^(packung|packungen|pkg)\b\s*/i, 'Pkg.'], [/^(stück|stueck|stk)\b\s*/i, 'Stk.'],
+    [/^(dose|dosen)\b\s*/i, 'Dose'], [/^(bund)\b\s*/i, 'Bund'],
+  ];
+  for (const [pattern, unit] of units) {
+    if (!pattern.test(remainder)) continue;
+    const name = remainder.replace(pattern, '').trim();
+    if (!name) return { name: clean };
+    return { name: name.charAt(0).toLocaleUpperCase('de-AT') + name.slice(1), amount: parsedAmount, unit };
+  }
+  return { name: clean };
 }
 
 function getCurrentDay() {
@@ -180,8 +208,9 @@ function SheetDismissHandle({ onClose }: { onClose: () => void }) {
   return <View {...dismiss.panHandlers} style={styles.sheetDismissZone}><View style={styles.sheetHandle} /></View>;
 }
 
-function LoadingScreen({ message = 'Dein Haushalt wird vorbereitet …' }: { message?: string }) {
-  return <View style={styles.loadingScreen}><View style={styles.loadingLogo}><MaterialCommunityIcons name="silverware-fork-knife" size={30} color="#FFFFFF" /></View><Text style={styles.loadingBrand}>MealFlow</Text><Text style={styles.loadingMessage}>{message}</Text><View style={styles.loadingProgress}><View style={styles.loadingProgressFill} /></View><Text style={styles.loadingHint}>Plan · Einkauf · Rezepte</Text></View>;
+function LoadingScreen({ message = 'MealFlow wird vorbereitet …', progress = 0 }: { message?: string; progress?: number }) {
+  const safeProgress = Math.max(0, Math.min(100, Math.round(progress)));
+  return <View style={styles.loadingScreen}><View style={styles.loadingLogo}><MaterialCommunityIcons name="silverware-fork-knife" size={30} color="#FFFFFF" /></View><Text style={styles.loadingBrand}>MealFlow</Text><Text style={styles.loadingMessage}>{message}</Text><View style={styles.loadingProgress}><View style={[styles.loadingProgressFill, { width: `${safeProgress}%` as `${number}%` }]} /></View><Text style={styles.loadingPercent}>{safeProgress}%</Text><Text style={styles.loadingHint}>Haushalt · Einkauf · Woche · Vorrat</Text></View>;
 }
 
 function RecipeArtwork({ recipe, variant }: { recipe: Recipe; variant: 'card' | 'detail' }) {
@@ -470,25 +499,20 @@ function SettingsSheet({
 
 
 
-function HomeScreen({ household, meals, items, history, onNavigate, onSettings, onCooked }: { household: Household; meals: Record<string, string>; items: ShoppingItem[]; history: MealHistoryEntry[]; onNavigate: (tab: Tab) => void; onSettings: () => void; onCooked: (title: string) => Promise<void> }) {
+function HomeScreen({ household, meals, items, history, pantryItems, onNavigate, onSettings, onCooked }: { household: Household; meals: Record<string, string>; items: ShoppingItem[]; history: MealHistoryEntry[]; pantryItems: PantryItem[]; onNavigate: (tab: Tab) => void; onSettings: () => void; onCooked: (title: string) => Promise<void> }) {
   const tonight = meals[todayIso()] || '';
   const planned = getWeekDays(1).filter((entry) => Boolean(meals[entry.iso])).length;
   const openItems = items.filter((item) => !item.done).length;
   const cookedToday = tonight ? history.some((entry) => entry.cookedOn === todayIso() && normalizeTitle(entry.recipeTitle) === normalizeTitle(tonight)) : false;
   const dateLabel = new Date().toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' });
-  return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
-      <ScreenHeader eyebrow={`${dateLabel} · ${household.name}`} title="Heute" subtitle={`Gemeinsam mit ${household.members.length} ${household.members.length === 1 ? 'Person' : 'Personen'} planen.`} action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
-      <SurfaceCard style={styles.heroCard}>
-        <View style={styles.heroIcon}><MaterialCommunityIcons name="silverware-fork-knife" size={25} color={colors.accent} /></View>
-        <Text style={styles.heroLabel}>HEUTE ABEND</Text><Text style={styles.heroMeal}>{tonight || 'Noch nichts geplant'}</Text><Text style={styles.heroMeta}>{tonight ? cookedToday ? 'Als gekocht markiert – der Haushalt ist auf dem gleichen Stand.' : 'Dein Abendessen ist im gemeinsamen Wochenplan.' : 'Plane jetzt ein Abendessen für den Haushalt.'}</Text>
-        <View style={styles.heroActions}><ActionButton label={tonight ? 'Wochenplan öffnen' : 'Abendessen planen'} icon="calendar-week-outline" onPress={() => onNavigate('woche')} variant="secondary" style={styles.flexButton} />{tonight && !cookedToday ? <ActionButton label="Gekocht" icon="check-circle-outline" onPress={() => onCooked(tonight)} style={styles.flexButton} /> : null}</View>
-      </SurfaceCard>
-      <View style={styles.metricsRow}><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="calendar-check-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{planned}/7</Text><Text style={styles.metricLabel}>nächste Woche geplant</Text></SurfaceCard><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="cart-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{openItems}</Text><Text style={styles.metricLabel}>offene Einkäufe</Text></SurfaceCard></View>
-      <SectionTitle title="Schnellzugriff" />
-      <View style={styles.quickGrid}><Pressable style={styles.quickAction} onPress={() => onNavigate('woche')}><View style={styles.quickIcon}><MaterialCommunityIcons name="calendar-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Woche planen</Text><Text style={styles.quickText}>Abendessen gemeinsam festlegen.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Einkauf ergänzen</Text><Text style={styles.quickText}>Jeder im Haushalt sieht Änderungen sofort.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('vorrat')}><View style={styles.quickIcon}><MaterialCommunityIcons name="archive-outline" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Vorrat</Text><Text style={styles.quickText}>Gekaufte Produkte scannen, Mengen und optionales MHD verwalten.</Text></Pressable></View>
-    </ScrollView>
-  );
+  const expiring = getUrgentPantry(pantryItems, 3).slice(0, 3);
+  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
+    <ScreenHeader eyebrow={`${dateLabel} · ${household.name}`} title="Heute" subtitle={`Gemeinsam mit ${household.members.length} ${household.members.length === 1 ? 'Person' : 'Personen'} planen.`} action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
+    <SurfaceCard style={styles.heroCard}><View style={styles.heroIcon}><MaterialCommunityIcons name="silverware-fork-knife" size={25} color={colors.accent} /></View><Text style={styles.heroLabel}>HEUTE ABEND</Text><Text style={styles.heroMeal}>{tonight || 'Noch nichts geplant'}</Text><Text style={styles.heroMeta}>{tonight ? cookedToday ? 'Als gekocht markiert – der Haushalt ist auf dem gleichen Stand.' : 'Dein Abendessen ist im gemeinsamen Wochenplan.' : 'Plane jetzt ein Abendessen für den Haushalt.'}</Text><View style={styles.heroActions}><ActionButton label={tonight ? 'Wochenplan öffnen' : 'Abendessen planen'} icon="calendar-week-outline" onPress={() => onNavigate('woche')} variant="secondary" style={styles.flexButton} />{tonight && !cookedToday ? <ActionButton label="Gekocht" icon="check-circle-outline" onPress={() => onCooked(tonight)} style={styles.flexButton} /> : null}</View></SurfaceCard>
+    <View style={styles.metricsRow}><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="calendar-check-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{planned}/7</Text><Text style={styles.metricLabel}>nächste Woche geplant</Text></SurfaceCard><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="cart-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{openItems}</Text><Text style={styles.metricLabel}>offene Einkäufe</Text></SurfaceCard></View>
+    {expiring.length ? <><SectionTitle title="Bald aufbrauchen" /><SurfaceCard style={styles.homeExpiryCard}>{expiring.map(({ item, info }) => <Pressable key={item.id} onPress={() => onNavigate('vorrat')} style={styles.homeExpiryRow}><MaterialCommunityIcons name={info.tone === 'today' || info.tone === 'expired' ? 'alert-circle' : 'clock-alert-outline'} size={19} color={info.tone === 'today' || info.tone === 'expired' ? colors.danger : colors.accent} /><Text style={styles.homeExpiryName} numberOfLines={1}>{item.productName}</Text><Text style={[styles.homeExpiryStatus, (info.tone === 'today' || info.tone === 'expired') && styles.homeExpiryStatusDanger]}>{info.label}</Text></Pressable>)}</SurfaceCard></> : null}
+    <SectionTitle title="Schnellzugriff" /><View style={styles.quickGrid}><Pressable style={styles.quickAction} onPress={() => onNavigate('woche')}><View style={styles.quickIcon}><MaterialCommunityIcons name="calendar-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Woche planen</Text><Text style={styles.quickText}>Abendessen gemeinsam festlegen.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Einkauf ergänzen</Text><Text style={styles.quickText}>Jeder im Haushalt sieht Änderungen sofort.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('vorrat')}><View style={styles.quickIcon}><MaterialCommunityIcons name="archive-outline" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Vorrat</Text><Text style={styles.quickText}>Gekaufte Produkte scannen, Mengen und MHD verwalten.</Text></Pressable></View>
+  </ScrollView>;
 }
 
 function PlanScreen({ household, meals, setMeals, onSettings }: { household: Household; meals: Record<string, string>; setMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; onSettings: () => void }) {
@@ -535,53 +559,27 @@ function PlanScreen({ household, meals, setMeals, onSettings }: { household: Hou
   </>;
 }
 
-function ShoppingSwipeRow({
-  item,
-  compact,
-  onToggle,
-  onDelete,
-}: {
-  item: ShoppingItem;
-  compact: boolean;
-  onToggle: (item: ShoppingItem) => void;
-  onDelete: (item: ShoppingItem) => void;
-}) {
+function ShoppingSwipeRow({ item, compact, onToggle, onDelete }: { item: ShoppingItem; compact: boolean; onToggle: (item: ShoppingItem) => void; onDelete: (item: ShoppingItem) => void }) {
   const translateX = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
+  const rowHeight = useRef(new Animated.Value(compact ? 54 : 64)).current;
+  const deleting = useRef(false);
   const pan = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.3,
-    onPanResponderMove: (_event, gesture) => {
-      if (gesture.dx < 0) translateX.setValue(Math.max(-104, gesture.dx));
-    },
+    onMoveShouldSetPanResponder: (_event, gesture) => !deleting.current && Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25,
+    onPanResponderMove: (_event, gesture) => { if (gesture.dx < 0) translateX.setValue(Math.max(-145, gesture.dx)); },
     onPanResponderRelease: (_event, gesture) => {
-      if (gesture.dx < -58) {
-        Animated.timing(translateX, { toValue: -118, duration: 120, useNativeDriver: true }).start(() => {
-          translateX.setValue(0);
-          onDelete(item);
-        });
-      } else {
-        Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 24, bounciness: 0 }).start();
-      }
+      if (gesture.dx < -58 || gesture.vx < -0.7) {
+        deleting.current = true;
+        Animated.parallel([
+          Animated.timing(translateX, { toValue: -420, duration: 180, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+        ]).start(() => Animated.timing(rowHeight, { toValue: 0, duration: 110, useNativeDriver: false }).start(() => onDelete(item)));
+      } else Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 28, bounciness: 0 }).start();
     },
-    onPanResponderTerminate: () => Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 24, bounciness: 0 }).start(),
-  }), [item, onDelete, translateX]);
-
-  const meta = [
-    `${formatAmount(item.amount)} ${item.unit}`,
-    item.addedByName ? `von ${item.addedByName}` : null,
-    item.done && item.completedByName ? `erledigt von ${item.completedByName}` : null,
-  ].filter(Boolean).join(' · ');
-
-  return (
-    <View style={styles.swipeRowClip}>
-      <View style={styles.swipeDeleteBack}><MaterialCommunityIcons name="trash-can-outline" size={21} color="#FFFFFF" /><Text style={styles.swipeDeleteText}>Löschen</Text></View>
-      <Animated.View {...pan.panHandlers} style={{ transform: [{ translateX }] }}>
-        <View style={[styles.shoppingRowV214, compact && styles.shoppingRowCompact]}>
-          <Pressable accessibilityLabel={item.done ? `${item.name} als offen markieren` : `${item.name} als erledigt markieren`} onPress={() => onToggle(item)} style={[styles.checkbox, item.done && styles.checkboxDone]}>{item.done ? <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" /> : null}</Pressable>
-          <View style={styles.flex1}><Text style={[styles.shoppingName, item.done && styles.shoppingNameDone]} numberOfLines={1}>{item.name}</Text><Text style={styles.shoppingMetaTiny} numberOfLines={1}>{meta}</Text></View>
-        </View>
-      </Animated.View>
-    </View>
-  );
+    onPanResponderTerminate: () => Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 28, bounciness: 0 }).start(),
+  }), [item, onDelete, translateX, opacity, rowHeight]);
+  const meta = [`${formatAmount(item.amount)} ${item.unit}`, item.addedByName ? `von ${item.addedByName}` : null, item.done && item.completedByName ? `erledigt von ${item.completedByName}` : null].filter(Boolean).join(' · ');
+  return <Animated.View style={{ height: rowHeight, opacity, overflow: 'hidden' }}><View style={styles.swipeRowClip}><View style={styles.swipeDeleteBack}><MaterialCommunityIcons name="trash-can-outline" size={21} color="#FFFFFF" /><Text style={styles.swipeDeleteText}>Löschen</Text></View><Animated.View {...pan.panHandlers} style={{ transform: [{ translateX }] }}><View style={[styles.shoppingRowV214, compact && styles.shoppingRowCompact]}><Pressable accessibilityLabel={item.done ? `${item.name} als offen markieren` : `${item.name} als erledigt markieren`} onPress={() => onToggle(item)} style={[styles.checkbox, item.done && styles.checkboxDone]}>{item.done ? <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" /> : null}</Pressable><View style={styles.flex1}><Text style={[styles.shoppingName, item.done && styles.shoppingNameDone]} numberOfLines={1}>{item.name}</Text><Text style={styles.shoppingMetaTiny} numberOfLines={1}>{meta}</Text></View></View></Animated.View></View></Animated.View>;
 }
 
 function ShoppingScreen({
@@ -608,7 +606,11 @@ function ShoppingScreen({
   useSpeechRecognitionEvent('end', () => setRecognizing(false));
   useSpeechRecognitionEvent('result', (event) => {
     const transcript = event.results[0]?.transcript?.trim();
-    if (transcript) setName(transcript);
+    if (!transcript) return;
+    const parsed = parseSpokenShopping(transcript);
+    setName(parsed.name);
+    if (parsed.amount) setAmount(parsed.amount);
+    if (parsed.unit) setUnit(parsed.unit);
   });
   useSpeechRecognitionEvent('error', () => setRecognizing(false));
 
@@ -732,7 +734,7 @@ function ShoppingScreen({
           <SheetDismissHandle onClose={() => setAddOpen(false)} />
           <View style={styles.shoppingSheetHeader}><View><Text style={styles.editorEyebrow}>EINKAUF</Text><Text style={styles.editorTitle}>Produkt hinzufügen</Text></View><IconButton icon="close" onPress={() => setAddOpen(false)} accessibilityLabel="Schließen" /></View>
           <View style={styles.voiceInputShell}><MaterialCommunityIcons name="cart-outline" size={21} color={colors.textTertiary} /><TextInput autoFocus value={name} onChangeText={setName} onSubmitEditing={() => add()} returnKeyType="done" placeholder="z. B. Milch" placeholderTextColor={colors.textTertiary} style={styles.voiceProductInput} /><Pressable onPress={recognizing ? () => ExpoSpeechRecognitionModule.stop() : startVoice} style={[styles.micButton, recognizing && styles.micButtonActive]}><MaterialCommunityIcons name={recognizing ? 'stop' : 'microphone-outline'} size={22} color={recognizing ? '#FFFFFF' : colors.accent} /></Pressable></View>
-          {recognizing ? <Text style={styles.listeningText}>Ich höre zu … sprich den Produktnamen.</Text> : null}
+          {recognizing ? <Text style={styles.listeningText}>Ich höre zu … z. B. „2 Liter Milch“.</Text> : null}
           {suggestions.length ? <View style={styles.suggestionBox}>{suggestions.map((suggestion) => <Pressable key={suggestion} onPress={() => setName(suggestion)} style={styles.suggestionRow}><MaterialCommunityIcons name="magnify" size={17} color={colors.textTertiary} /><Text style={styles.suggestionText}>{suggestion}</Text></Pressable>)}</View> : null}
           <View style={styles.quantityControlRow}><View><Text style={styles.miniLabel}>MENGE</Text><Text style={styles.quantityValue}>{formatAmount(amount)}</Text></View><View style={styles.quantityButtons}><Pressable onPress={() => changeAmount(-0.5)} style={styles.quantityRoundButton}><MaterialCommunityIcons name="minus" size={20} color={colors.text} /></Pressable><Pressable onPress={() => changeAmount(0.5)} style={styles.quantityRoundButton}><MaterialCommunityIcons name="plus" size={20} color={colors.text} /></Pressable></View></View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitChips}>{UNITS.map((value) => <Pressable key={value} onPress={() => setUnit(value)} style={[styles.unitChip, unit === value && styles.unitChipActive]}><Text style={[styles.unitChipText, unit === value && styles.unitChipTextActive]}>{value}</Text></Pressable>)}</ScrollView>
@@ -886,9 +888,11 @@ function MainApp() {
   const [meals, setMeals] = useState<Record<string, string>>({});
   const [ownRecipes, setOwnRecipes] = useState<OwnRecipe[]>([]);
   const [history, setHistory] = useState<MealHistoryEntry[]>([]);
+  const [pantryItems, setPantryItems] = useState<PantryItem[]>([]);
   const [household, setHousehold] = useState<Household | null>(null);
   const [invitations, setInvitations] = useState<HouseholdInvitation[]>([]);
   const [ready, setReady] = useState(false);
+  const [startupProgress, setStartupProgress] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [householdOpen, setHouseholdOpen] = useState(false);
   const [email, setEmail] = useState('');
@@ -910,52 +914,41 @@ function MainApp() {
     savePreferences(next).catch(() => undefined);
   };
 
-  const reloadAll = async (fastStart = false) => {
-  const generation = ++loadGeneration.current;
-  clearHouseholdCache();
-  const nextHousehold = await loadHousehold();
-  if (generation !== loadGeneration.current) return;
-  setHousehold(nextHousehold);
-
-  const [shopping, plan] = await Promise.all([loadShopping(), loadMealPlan()]);
-  if (generation !== loadGeneration.current) return;
-  setItems(shopping);
-  setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
-
-  const secondary = Promise.all([
-    loadOwnRecipes(),
-    loadMealHistory(),
-    loadPendingHouseholdInvitations(),
-    supabase.auth.getUser(),
-  ]);
-
-  if (fastStart) {
-    setReady(true);
-    secondary.then(([customRecipes, cookedHistory, pending, userResult]) => {
+  const reloadAll = async (startup = false) => {
+    const startedAt = Date.now();
+    const generation = ++loadGeneration.current;
+    if (startup) setStartupProgress(0);
+    clearHouseholdCache();
+    if (startup) setStartupProgress(12);
+    const nextHousehold = await loadHousehold();
+    if (generation !== loadGeneration.current) return;
+    setHousehold(nextHousehold);
+    if (startup) setStartupProgress(30);
+    const [shopping, plan, pantry] = await Promise.all([loadShopping(), loadMealPlan(), loadPantry()]);
+    if (generation !== loadGeneration.current) return;
+    setItems(shopping);
+    setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
+    setPantryItems(pantry);
+    syncExpiryNotifications(pantry).catch(() => undefined);
+    if (startup) setStartupProgress(68);
+    const [customRecipes, cookedHistory, pending, userResult] = await Promise.all([loadOwnRecipes(), loadMealHistory(), loadPendingHouseholdInvitations(), supabase.auth.getUser()]);
+    if (generation !== loadGeneration.current) return;
+    setOwnRecipes(customRecipes); setHistory(cookedHistory); setInvitations(pending); setEmail(userResult.data.user?.email ?? '');
+    if (startup) {
+      setStartupProgress(92);
+      const remaining = 1350 - (Date.now() - startedAt);
+      if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
       if (generation !== loadGeneration.current) return;
-      setOwnRecipes(customRecipes);
-      setHistory(cookedHistory);
-      setInvitations(pending);
-      setEmail(userResult.data.user?.email ?? '');
-    }).catch(() => undefined);
-    return;
-  }
-
-  const [customRecipes, cookedHistory, pending, userResult] = await secondary;
-  if (generation !== loadGeneration.current) return;
-  setOwnRecipes(customRecipes);
-  setHistory(cookedHistory);
-  setInvitations(pending);
-  setEmail(userResult.data.user?.email ?? '');
-};
+      setStartupProgress(100);
+      await new Promise((resolve) => setTimeout(resolve, 220));
+    }
+    setReady(true);
+  };
 
   useEffect(() => {
-    loadPreferences().then((loaded) => {
-      setPreferences(loaded);
-      setTab(loaded.startTab);
-      applyAppearance(loaded.themeMode, loaded.cozyMode);
-    }).catch(() => undefined);
-    reloadAll(true).catch((error) => { setReady(true); Alert.alert('Daten konnten nicht geladen werden', germanError(error?.message)); });
+    setStartupProgress(0);
+    loadPreferences().then((loaded) => { setPreferences(loaded); setTab(loaded.startTab); applyAppearance(loaded.themeMode, loaded.cozyMode); }).catch(() => undefined);
+    reloadAll(true).catch((error) => { setStartupProgress(100); setReady(true); Alert.alert('Daten konnten nicht geladen werden', germanError(error?.message)); });
   }, []);
 
   useEffect(() => {
@@ -973,6 +966,7 @@ function MainApp() {
     const filter = `household_id=eq.${household.id}`;
     const channel = supabase.channel(`mealflow-household-${household.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => loadShopping().then(setItems).catch(() => undefined))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items', filter }, () => loadPantry().then((next) => { setPantryItems(next); syncExpiryNotifications(next).catch(() => undefined); }).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => loadMealPlan().then((plan) => setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])))).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter }, () => loadOwnRecipes().then(setOwnRecipes).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_history', filter }, () => loadMealHistory().then(setHistory).catch(() => undefined))
@@ -1017,13 +1011,13 @@ function MainApp() {
     }
   };
 
-  if (!ready || !household) return <LoadingScreen message="Dein Haushalt wird vorbereitet …" />;
+  if (!ready || !household) return <LoadingScreen message="Deine Daten werden sicher geladen …" progress={startupProgress} />;
 
   return (
     <View style={[styles.appRoot, { paddingTop: insets.top }]}>
       <StatusBar style={darkMode ? 'light' : 'dark'} />
       <View style={styles.screenArea}>
-        {tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
+        {tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} pantryItems={pantryItems} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
         {tab === 'woche' ? <PlanScreen household={household} meals={meals} setMeals={setMeals} onSettings={() => setSettingsOpen(true)} /> : null}
         {tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setItems} preferences={preferences} onSettings={() => setSettingsOpen(true)} /> : null}
         {tab === 'vorrat' ? <InventoryScreen onSettings={() => setSettingsOpen(true)} hapticsEnabled={preferences.hapticsEnabled} /> : null}
@@ -1041,7 +1035,7 @@ function MainApp() {
 function Root() {
   const [authenticated, setAuthenticated] = useState(false); const [checking, setChecking] = useState(true);
   useEffect(() => { if (!isCloudConfigured) { setChecking(false); return; } supabase.auth.getSession().then(({ data }) => { setAuthenticated(Boolean(data.session)); setChecking(false); }); const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { if (!session) clearHouseholdCache(); setAuthenticated(Boolean(session)); }); return () => listener.subscription.unsubscribe(); }, []);
-  if (checking) return <LoadingScreen message="Anmeldung wird geprüft …" />;
+  if (checking) return <LoadingScreen message="Anmeldung wird geprüft …" progress={5} />;
   if (!isCloudConfigured) return <View style={styles.loadingScreen}><Text style={styles.configurationTitle}>Cloud-Verbindung fehlt</Text><Text style={styles.configurationText}>MealFlow benötigt die Supabase-Konfiguration, damit dein Haushalt sicher synchronisiert werden kann.</Text></View>;
   return authenticated ? <MainApp /> : <AuthScreen />;
 }
@@ -1052,6 +1046,7 @@ function createStyles() {
   return StyleSheet.create({
   appRoot: { flex: 1, backgroundColor: colors.background }, screenArea: { flex: 1 }, screenContent: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, gap: 18 }, flex1: { flex: 1 }, flexButton: { flex: 1 }, modalFlex: { flex: 1, justifyContent: 'flex-end' }, fullModal: { flex: 1, backgroundColor: colors.background }, headerSpacer: { width: 44, height: 44 },
   authRoot: { flex: 1, backgroundColor: colors.background }, authContent: { flexGrow: 1, justifyContent: 'center', padding: 24, gap: 12 }, brandMark: { width: 58, height: 58, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', ...getShadow() }, authBrand: { ...typography.title, color: colors.accent, marginTop: 6 }, authHero: { ...typography.hero, color: colors.text, maxWidth: 380 }, authSubtitle: { ...typography.body, color: colors.textSecondary, maxWidth: 370, marginBottom: 12 }, authCard: { padding: 18, gap: 16 }, segmentedControl: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: 4 }, segmentButton: { flex: 1, minHeight: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, segmentButtonActive: { backgroundColor: colors.surface, ...getShadow() }, segmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, segmentTextActive: { color: colors.text }, inputGroup: { gap: 7 }, inputLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, inputShell: { minHeight: 52, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.md }, textInput: { flex: 1, ...typography.body, color: colors.text, paddingVertical: 12 }, authHint: { ...typography.caption, color: colors.textTertiary, textAlign: 'center' },
+  homeExpiryCard: { paddingHorizontal: 14, overflow: 'hidden' }, homeExpiryRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, homeExpiryName: { ...typography.caption, color: colors.text, fontWeight: '800', flex: 1 }, homeExpiryStatus: { fontSize: 11, lineHeight: 14, color: colors.accent, fontWeight: '800' }, homeExpiryStatusDanger: { color: colors.danger },
   heroCard: { padding: 20, gap: 10 }, heroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, heroLabel: { ...typography.label, color: colors.accent, marginTop: 4 }, heroMeal: { ...typography.h2, color: colors.text }, heroMeta: { ...typography.body, color: colors.textSecondary, marginBottom: 4 }, heroActions: { flexDirection: 'row', gap: 10 }, metricsRow: { flexDirection: 'row', gap: 12 }, metricCard: { flex: 1, padding: 16, gap: 7 }, metricNumber: { fontSize: 26, lineHeight: 31, fontWeight: '800', color: colors.text }, metricLabel: { ...typography.caption, color: colors.textSecondary }, quickGrid: { gap: 10 }, quickAction: { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, ...getShadow() }, quickIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, quickTitle: { ...typography.bodyStrong, color: colors.text, minWidth: 95 }, quickText: { ...typography.caption, color: colors.textSecondary, flex: 1 },
   weekOverviewCard: { padding: 18, gap: 14 }, weekOverviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, weekOverviewLabel: { ...typography.label, color: colors.accent }, weekOverviewTitle: { ...typography.title, color: colors.text, marginTop: 3 }, weekOverviewBadge: { minHeight: 38, paddingHorizontal: 11, borderRadius: radius.pill, backgroundColor: colors.accentSoft, flexDirection: 'row', alignItems: 'center', gap: 6 }, weekOverviewBadgeText: { ...typography.caption, color: colors.accent, fontWeight: '800' }, weekProgressTrack: { height: 8, borderRadius: 5, backgroundColor: colors.surfaceMuted, overflow: 'hidden' }, weekProgressFill: { height: '100%', borderRadius: 5, backgroundColor: colors.accent }, weekStrip: { flexDirection: 'row', gap: 5 }, weekStripDay: { flex: 1, minHeight: 68, borderRadius: 15, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', gap: 3, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent' }, weekStripDayToday: { backgroundColor: colors.accentSoft, borderColor: '#AFC8B6' }, weekStripDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, weekStripDowToday: { color: colors.accent }, weekStripDate: { fontSize: 17, lineHeight: 20, fontWeight: '800', color: colors.text }, weekStripDateToday: { color: colors.accent }, weekStripDot: { width: 6, height: 6, borderRadius: 3 }, weekStripDotPlanned: { backgroundColor: colors.accent }, weekStripDotOpen: { backgroundColor: colors.border }, weekSectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2 }, weekSectionTitle: { ...typography.title, color: colors.text }, weekSectionHint: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   dayList: { gap: 12 }, dayCard: { minHeight: 112, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, ...getShadow() }, dayCardToday: { borderColor: '#AFC8B6', backgroundColor: colors.surface }, dayDateBlock: { width: 58, height: 76, borderRadius: 18, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayDateBlockToday: { backgroundColor: colors.accent }, dayDateDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, dayDateDowToday: { color: '#DCEADF' }, dayDateNumber: { fontSize: 24, lineHeight: 28, fontWeight: '800', color: colors.text }, dayDateNumberToday: { color: '#FFFFFF' }, dayDateMonth: { fontSize: 10, lineHeight: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }, dayDateMonthToday: { color: '#DCEADF' }, dayCardContent: { flex: 1, gap: 5 }, dayTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }, dayName: { ...typography.caption, color: colors.textSecondary, fontWeight: '800' }, todayPill: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, overflow: 'hidden', fontWeight: '800' }, dayStatusPill: { fontSize: 10, lineHeight: 12, fontWeight: '800', paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.pill, overflow: 'hidden' }, dayStatusPlanned: { color: colors.accent, backgroundColor: colors.accentSoft }, dayStatusOpen: { color: colors.textTertiary, backgroundColor: colors.surfaceMuted }, dayMeal: { fontSize: 19, lineHeight: 24, fontWeight: '800', color: colors.text }, dayMealEmpty: { color: colors.textTertiary, fontWeight: '700' }, dayMeta: { ...typography.caption, color: colors.textSecondary }, dayAction: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayActionPlanned: { backgroundColor: colors.accentSoft },
@@ -1062,7 +1057,7 @@ function createStyles() {
   recipeSegments: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, padding: 4, borderRadius: radius.md }, recipeSegment: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }, recipeSegmentActive: { backgroundColor: colors.surface, ...getShadow() }, recipeSegmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, recipeSegmentTextActive: { color: colors.text }, searchRow: { flexDirection: 'row', gap: 9 }, searchShell: { flex: 1, minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, searchInput: { flex: 1, ...typography.body, color: colors.text }, filterButton: { width: 54, height: 54, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, filterBadge: { position: 'absolute', right: 5, top: 5, minWidth: 17, height: 17, borderRadius: 9, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }, filterBadgeText: { fontSize: 10, color: '#FFFFFF', fontWeight: '800' }, chipsRow: { gap: 8, paddingRight: 12 }, chip: { paddingHorizontal: 13, paddingVertical: 9, backgroundColor: colors.accentSoft, borderRadius: radius.pill }, chipText: { ...typography.caption, color: colors.accent, fontWeight: '700' }, sourceHint: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 4 }, sourceHintText: { ...typography.caption, color: colors.textSecondary, flex: 1 }, loadingBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, gap: 10 }, loadingText: { ...typography.caption, color: colors.textSecondary }, recipeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, recipeCard: { width: '48.5%', backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, ...getShadow() }, recipeImage: { width: '100%', height: 130, backgroundColor: colors.surfaceMuted }, recipeImagePlaceholder: { width: '100%', height: 130, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, recipeCardBody: { padding: 12, gap: 4 }, recipeSource: { ...typography.label, color: colors.accent }, recipeCardTitle: { ...typography.bodyStrong, color: colors.text }, recipeCardMeta: { ...typography.caption, color: colors.textSecondary }, ownRecipeList: { gap: 9 }, ownRecipeRow: { minHeight: 72, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg }, ownRecipeIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, ownRecipeTitle: { ...typography.bodyStrong, color: colors.text }, ownRecipeMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   timeRow: { flexDirection: 'row', gap: 8 }, filterChip: { flex: 1, minHeight: 42, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, filterChipActive: { backgroundColor: colors.accent }, filterChipText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, filterChipTextActive: { color: '#FFFFFF' }, switchRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12 },
   fullModalHeader: { paddingHorizontal: 18, paddingTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fullModalTitle: { ...typography.title, color: colors.text }, formContent: { padding: 18, paddingBottom: 40, gap: 18 }, formInput: { minHeight: 52, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, ...typography.body, color: colors.text }, multilineInput: { minHeight: 130 }, servingsInput: { maxWidth: 110 }, recipeDetailContent: { minHeight: '100%', backgroundColor: colors.background, padding: 18, paddingBottom: 44, gap: 16 }, detailTopbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, detailImage: { width: '100%', height: 250, borderRadius: radius.xl, backgroundColor: colors.surfaceMuted }, detailPlaceholder: { width: '100%', height: 190, borderRadius: radius.xl, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, detailSource: { ...typography.label, color: colors.accent }, detailTitle: { ...typography.h1, color: colors.text }, detailMeta: { ...typography.body, color: colors.textSecondary }, detailBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, metaBadge: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 9, paddingVertical: 5, borderRadius: radius.pill, overflow: 'hidden' }, ingredientsCard: { padding: 15, gap: 12 }, ingredientRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 }, ingredientDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.accent, marginTop: 8 }, ingredientText: { ...typography.body, color: colors.text, flex: 1 }, instructionsCard: { padding: 16 }, instructionsText: { ...typography.body, color: colors.textSecondary }, dayPickerTitle: { ...typography.h2, color: colors.text, marginBottom: 4 }, dayPickerGrid: { gap: 8 }, dayPickerButton: { minHeight: 58, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, justifyContent: 'space-between', alignItems: 'center', flexDirection: 'row', paddingHorizontal: 15 }, dayPickerButtonText: { ...typography.bodyStrong, color: colors.text }, dayPickerDate: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  tabBar: { height: 64, flexDirection: 'row', backgroundColor: colors.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingHorizontal: 6 }, tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 }, tabLabel: { fontSize: 11, lineHeight: 14, fontWeight: '600', color: colors.textTertiary }, tabLabelActive: { color: colors.accent }, loadingScreen: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34, gap: 10 }, loadingLogo: { width: 68, height: 68, borderRadius: 23, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 5 }, loadingBrand: { ...typography.h2, color: colors.text }, loadingMessage: { ...typography.body, color: colors.textSecondary, textAlign: 'center' }, loadingProgress: { width: 156, height: 5, borderRadius: 3, overflow: 'hidden', backgroundColor: colors.surfaceMuted, marginTop: 8 }, loadingProgressFill: { width: '68%', height: '100%', borderRadius: 3, backgroundColor: colors.accent }, loadingHint: { ...typography.caption, color: colors.textTertiary, marginTop: 2 },
+  tabBar: { height: 64, flexDirection: 'row', backgroundColor: colors.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingHorizontal: 6 }, tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 }, tabLabel: { fontSize: 11, lineHeight: 14, fontWeight: '600', color: colors.textTertiary }, tabLabelActive: { color: colors.accent }, loadingScreen: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34, gap: 10 }, loadingLogo: { width: 68, height: 68, borderRadius: 23, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 5 }, loadingBrand: { ...typography.h2, color: colors.text }, loadingMessage: { ...typography.body, color: colors.textSecondary, textAlign: 'center' }, loadingProgress: { width: 156, height: 5, borderRadius: 3, overflow: 'hidden', backgroundColor: colors.surfaceMuted, marginTop: 8 }, loadingProgressFill: { height: '100%', borderRadius: 3, backgroundColor: colors.accent }, loadingPercent: { ...typography.caption, color: colors.accent, fontWeight: '800', minWidth: 38, textAlign: 'center' }, loadingHint: { ...typography.caption, color: colors.textTertiary, marginTop: 2 },
 
   settingsSheetV214: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 18, position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '90%', gap: 10, overflow: 'hidden' },
   settingsScrollContent: { gap: 12, paddingBottom: 18 },
