@@ -4,6 +4,13 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "baseUrl": ".",
-    "paths": {"@/*": ["src/*"]}
-  }
+    "paths": {
+      "@/*": [
+        "src/*"
+      ]
+    }
+  },
+  "exclude": [
+    "supabase/functions"
+  ]
 }
