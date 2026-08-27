@@ -1,5 +1,18 @@
 # MealFlow Changelog
 
+## 2.2.3
+
+- Android Auto-Updater: prüft beim Start automatisch das offizielle MealFlow-Update-Manifest, lädt neue APKs direkt von GitHub Releases und öffnet anschließend den Android-Installer.
+- Android-Einstellungen enthalten zusätzlich eine manuelle Aktion „Nach Updates suchen“.
+- Android-System-/Gestenleiste kollidiert nicht mehr mit den wichtigsten unteren Formularen und Sheets; Safe-Area-Abstände gelten jetzt auch dort.
+- Einstellungen und Haushaltsverwaltung respektieren auf iPhone und Android die obere und untere Safe Area.
+- MHD kann auf Android und iPhone über eine native Datumsauswahl gesetzt und wieder entfernt werden.
+- Haushaltsrechte verschärft: Standardmäßig darf nur der Haushaltsersteller neue Personen einladen.
+- Der Haushaltsersteller kann einzelnen Mitgliedern das Recht „Neue Personen einladen“ geben oder wieder entziehen.
+- Permanente Haushaltscodes werden nicht mehr zum Beitritt akzeptiert; neue geteilte Codes sind 14 Tage gültige Einmal-Einladungen.
+- Android-Builds werden zusätzlich als GitHub Release veröffentlicht und erzeugen automatisch `android-update.json` für den In-App-Updater.
+- Version 2.2.3, iOS Build 15, Android Version Code 15.
+
 ## 2.2.2
 
 - Einkaufsliste: Löschgeste mit flüssigem Ausblenden und Zusammenklappen statt abruptem Entfernen.

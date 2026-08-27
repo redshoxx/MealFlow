@@ -16,7 +16,8 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   addPantryItem,
   deletePantryItem,
@@ -86,6 +87,20 @@ function formatExpiry(iso: string) {
   return new Date(`${iso}T12:00:00`).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function expiryPickerDate(value: string) {
+  try {
+    const iso = parseExpiry(value);
+    if (iso) return new Date(`${iso}T12:00:00`);
+  } catch {}
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  return date;
+}
+
+function expiryDraftFromDate(date: Date) {
+  return date.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
 function errorText(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? '');
   const lower = message.toLowerCase();
@@ -104,6 +119,7 @@ function useSwipeDown(onClose: () => void) {
 }
 
 export function InventoryScreen({ onSettings, hapticsEnabled }: { onSettings: () => void; hapticsEnabled: boolean }) {
+  const insets = useSafeAreaInsets();
   const [pantry, setPantry] = useState<PantryItem[]>([]);
   const [purchases, setPurchases] = useState<PurchasedForPantry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,6 +133,7 @@ export function InventoryScreen({ onSettings, hapticsEnabled }: { onSettings: ()
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<PantryItem | null>(null);
+  const [showExpiryPicker, setShowExpiryPicker] = useState(false);
   const refreshRunning = useRef(false);
   const realtimeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorSwipe = useSwipeDown(() => setEditorOpen(false));
@@ -177,6 +194,7 @@ export function InventoryScreen({ onSettings, hapticsEnabled }: { onSettings: ()
   const openManual = (purchase?: PurchasedForPantry | null) => {
     feedback();
     setEditing(null);
+    setShowExpiryPicker(false);
     setDraft({
       ...EMPTY_DRAFT,
       shoppingItemId: purchase?.id ?? null,
@@ -190,6 +208,7 @@ export function InventoryScreen({ onSettings, hapticsEnabled }: { onSettings: ()
   const openEdit = (item: PantryItem) => {
     feedback();
     setEditing(item);
+    setShowExpiryPicker(false);
     setDraft({
       shoppingItemId: item.shoppingItemId,
       barcode: item.barcode,
@@ -231,6 +250,7 @@ export function InventoryScreen({ onSettings, hapticsEnabled }: { onSettings: ()
       source: 'open_food_facts',
     });
     setEditing(null);
+    setShowExpiryPicker(false);
     setEditorOpen(true);
   };
 
@@ -360,16 +380,16 @@ export function InventoryScreen({ onSettings, hapticsEnabled }: { onSettings: ()
       </Modal>
 
       <Modal transparent visible={editorOpen} animationType="fade" presentationStyle="overFullScreen" onRequestClose={() => setEditorOpen(false)}>
-        <KeyboardAvoidingView style={styles.modalFlex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.modalFlex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Pressable style={styles.overlay} onPress={() => setEditorOpen(false)} />
-          <View style={styles.editorSheet}>
+          <View style={[styles.editorSheet, { paddingBottom: Math.max(insets.bottom, 18) }]}>
             <View {...editorSwipe.panHandlers} style={styles.dismissZone}><View style={styles.sheetHandle} /></View>
             <View style={styles.editorHeader}><View><Text style={styles.eyebrow}>{editing ? 'BEARBEITEN' : draft.shoppingItemId ? 'EINKAUF ÜBERNEHMEN' : 'NEUES PRODUKT'}</Text><Text style={styles.editorTitle}>{editing ? draft.productName : 'Zum Vorrat hinzufügen'}</Text></View><IconButton icon="close" onPress={() => setEditorOpen(false)} accessibilityLabel="Schließen" /></View>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.editorContent}>
               {!editing && draft.imageUrl ? <Image source={{ uri: draft.imageUrl }} style={styles.detectedImage} resizeMode="contain" /> : null}
               {!editing ? <><View style={styles.inputGroup}><Text style={styles.fieldLabel}>Produkt</Text><TextInput value={draft.productName} maxLength={160} onChangeText={(value) => setDraft((current) => ({ ...current, productName: value }))} placeholder="z. B. Milch" placeholderTextColor={colors.textTertiary} style={styles.formInput} /></View><View style={styles.inputGroup}><Text style={styles.fieldLabel}>Marke <Text style={styles.optional}>optional</Text></Text><TextInput value={draft.brand} maxLength={120} onChangeText={(value) => setDraft((current) => ({ ...current, brand: value }))} placeholder="Marke" placeholderTextColor={colors.textTertiary} style={styles.formInput} /></View></> : null}
               <View style={styles.amountUnitRow}><View style={styles.amountColumn}><Text style={styles.fieldLabel}>Menge</Text><TextInput value={draft.quantity} onChangeText={(value) => setDraft((current) => ({ ...current, quantity: value }))} keyboardType="decimal-pad" placeholder="1" placeholderTextColor={colors.textTertiary} style={styles.formInput} /></View><View style={styles.unitColumn}><Text style={styles.fieldLabel}>Einheit</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitRow}>{UNITS.map((unit) => <Pressable key={unit} onPress={() => setDraft((current) => ({ ...current, unit }))} style={[styles.unitChip, draft.unit === unit && styles.unitChipActive]}><Text style={[styles.unitChipText, draft.unit === unit && styles.unitChipTextActive]}>{unit}</Text></Pressable>)}</ScrollView></View></View>
-              <View style={styles.inputGroup}><Text style={styles.fieldLabel}>MHD <Text style={styles.optional}>optional</Text></Text><TextInput value={draft.expiry} onChangeText={(value) => setDraft((current) => ({ ...current, expiry: value }))} keyboardType="numbers-and-punctuation" placeholder="TT.MM.JJJJ" placeholderTextColor={colors.textTertiary} style={styles.formInput} /><Text style={styles.fieldHint}>Bei einem MHD plant MealFlow automatisch Erinnerungen.</Text></View>
+              <View style={styles.inputGroup}><Text style={styles.fieldLabel}>MHD <Text style={styles.optional}>optional</Text></Text><View style={styles.dateFieldRow}><Pressable onPress={() => setShowExpiryPicker(true)} style={styles.dateField}><MaterialCommunityIcons name="calendar-month-outline" size={20} color={colors.accent} /><Text style={[styles.dateFieldText, !draft.expiry && styles.dateFieldPlaceholder]}>{draft.expiry || 'Datum auswählen'}</Text><MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} /></Pressable>{draft.expiry ? <Pressable accessibilityLabel="MHD entfernen" onPress={() => { setDraft((current) => ({ ...current, expiry: '' })); setShowExpiryPicker(false); }} style={styles.dateClearButton}><MaterialCommunityIcons name="close" size={19} color={colors.textSecondary} /></Pressable> : null}</View>{showExpiryPicker ? <DateTimePicker value={expiryPickerDate(draft.expiry)} mode="date" display={Platform.OS === 'ios' ? 'compact' : 'default'} onChange={(_event, date) => { if (Platform.OS === 'android') setShowExpiryPicker(false); if (date) { setDraft((current) => ({ ...current, expiry: expiryDraftFromDate(date) })); if (Platform.OS === 'ios') setShowExpiryPicker(false); } }} /> : null}<Text style={styles.fieldHint}>Bei einem MHD plant MealFlow automatisch Erinnerungen.</Text></View>
               <ActionButton label={editing ? 'Speichern' : 'Zum Vorrat hinzufügen'} icon={editing ? 'content-save-outline' : 'archive-arrow-down-outline'} onPress={saveDraft} loading={saving} />
             </ScrollView>
           </View>
@@ -444,6 +464,11 @@ function createStyles() {
     fieldHint: { ...typography.caption, color: colors.textSecondary },
     optional: { color: colors.textTertiary, fontWeight: '500' },
     formInput: { minHeight: 50, borderRadius: radius.md, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 13, ...typography.body, color: colors.text },
+    dateFieldRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+    dateField: { flex: 1, minHeight: 50, borderRadius: radius.md, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 },
+    dateFieldText: { ...typography.body, color: colors.text, flex: 1 },
+    dateFieldPlaceholder: { color: colors.textTertiary },
+    dateClearButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
     amountUnitRow: { gap: 12 },
     amountColumn: { gap: 7 },
     unitColumn: { gap: 7 },

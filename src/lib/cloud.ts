@@ -5,6 +5,7 @@ export type HouseholdMember = {
   displayName: string;
   role: 'owner' | 'admin' | 'member';
   joinedAt: string;
+  canInvite: boolean;
 };
 
 export type Household = {
@@ -13,6 +14,7 @@ export type Household = {
   inviteCode: string;
   role: 'owner' | 'admin' | 'member';
   myDisplayName: string;
+  canInvite: boolean;
   members: HouseholdMember[];
 };
 
@@ -132,7 +134,7 @@ export async function loadHousehold(): Promise<Household> {
   const user = await requireUser();
   const [{ data: householdData, error: householdError }, { data: memberData, error: memberError }, { data: myProfile, error: profileError }] = await Promise.all([
     supabase.from('households').select('id,name,invite_code').eq('id', householdId).single(),
-    supabase.from('household_members').select('user_id,role,joined_at').eq('household_id', householdId).order('joined_at', { ascending: true }),
+    supabase.from('household_members').select('user_id,role,joined_at,can_invite').eq('household_id', householdId).order('joined_at', { ascending: true }),
     supabase.from('profiles').select('display_name').eq('id', user.id).single(),
   ]);
   if (householdError) throw householdError;
@@ -146,6 +148,7 @@ export async function loadHousehold(): Promise<Household> {
     displayName: names.get(String(row.user_id)) ?? 'Mitglied',
     role: row.role as HouseholdMember['role'],
     joinedAt: String(row.joined_at),
+    canInvite: row.role === 'owner' || Boolean(row.can_invite),
   }));
   const own = members.find((member) => member.userId === user.id);
 
@@ -155,6 +158,7 @@ export async function loadHousehold(): Promise<Household> {
     inviteCode: String(householdData.invite_code),
     role: own?.role ?? 'member',
     myDisplayName: String(myProfile.display_name || own?.displayName || 'Mitglied'),
+    canInvite: own?.role === 'owner' || Boolean(own?.canInvite),
     members,
   };
 }
@@ -188,6 +192,21 @@ export async function createHouseholdInvitation(householdId: string, email: stri
   });
   if (error) throw error;
   return String(data);
+}
+
+export async function createHouseholdJoinCode(householdId: string): Promise<string> {
+  const { data, error } = await requireCloud().rpc('create_household_join_code', { target_household: householdId });
+  if (error) throw error;
+  return String(data);
+}
+
+export async function setHouseholdInvitePermission(householdId: string, userId: string, allowed: boolean) {
+  const { error } = await requireCloud().rpc('set_household_invite_permission', {
+    target_household: householdId,
+    target_user: userId,
+    allowed,
+  });
+  if (error) throw error;
 }
 
 export async function loadPendingHouseholdInvitations(): Promise<HouseholdInvitation[]> {
