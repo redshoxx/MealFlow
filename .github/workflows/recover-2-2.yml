@@ -1,0 +1,53 @@
+name: Recover MealFlow 2.2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/recover-2-2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apply final 2.2 UI patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          data = Path('.github/workflows/apply-2-2.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(data) if "python3 - <<'PY'" in line) + 1
+          end = next(i for i in range(start, len(data)) if data[i].strip() == 'PY')
+          lines = []
+          for line in data[start:end]:
+              lines.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/apply_22.py').write_text('\n'.join(lines) + '\n')
+          PY
+          python3 /tmp/apply_22.py
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit final MealFlow 2.2
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-2-2.yml .github/workflows/recover-2-2.yml
+          git add App.tsx CHANGELOG.md package-lock.json
+          git commit -m "Build MealFlow 2.2 calorie tracker"
+          git push origin main
