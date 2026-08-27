@@ -4,6 +4,8 @@ export type Recipe = {
   id: string;
   title: string;
   image?: string;
+  imageFallback?: string;
+  imageSource?: 'original' | 'search';
   source?: string;
   sourceKind: 'mealflow' | 'online' | 'web';
   url?: string;
@@ -92,12 +94,7 @@ function applyFilters(recipes: Recipe[], filters: RecipeFilters) {
   const excluded = new Set((filters.excludeTitles ?? []).map(normalizeText));
   return recipes.filter((recipe) => {
     if (excluded.has(normalizeText(recipe.title))) return false;
-
-    // Web results are already searched with these filter terms server-side.
-    // They often do not expose structured duration/ingredient metadata in the search result itself,
-    // so we must not discard them simply because that metadata is absent.
     if (recipe.sourceKind === 'web') return true;
-
     if (filters.maxMinutes && (!recipe.minutes || recipe.minutes > filters.maxMinutes)) return false;
     if (filters.vegetarianOnly && recipe.vegetarian !== true) return false;
     if (filters.ingredient?.trim() && !matchesIngredient(recipe, filters.ingredient)) return false;
@@ -193,16 +190,14 @@ async function searchWeb(query: string, filters: RecipeFilters, page: number): P
     },
   });
 
-  if (error) {
-    // The app remains useful with the structured fallback sources until the
-    // server-side web-search provider has been configured.
-    return { recipes: [], hasMore: false, configured: false };
-  }
+  if (error) return { recipes: [], hasMore: false, configured: false };
 
   const recipes = (Array.isArray(data?.results) ? data.results : []).map((row: any): Recipe => ({
     id: String(row.id),
     title: String(row.title || 'Rezept'),
     image: row.image ? String(row.image) : undefined,
+    imageFallback: row.imageFallback ? String(row.imageFallback) : undefined,
+    imageSource: row.imageSource === 'original' ? 'original' : row.imageSource === 'search' ? 'search' : undefined,
     source: String(row.source || 'Web'),
     sourceKind: 'web',
     url: row.url ? String(row.url) : undefined,
@@ -267,8 +262,6 @@ export async function searchRecipePage(query: string, filters: RecipeFilters = {
     throw catalogResult.reason ?? onlineResult.reason;
   }
 
-  // Web results come first for Google-like discovery. Structured MealFlow/TheMealDB
-  // results are still mixed in because they can be added to the shopping list directly.
   const merged = applyFilters(dedupe([...web.recipes, ...catalog, ...online]), filters);
 
   return {
