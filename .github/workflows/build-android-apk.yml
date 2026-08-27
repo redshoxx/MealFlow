@@ -5,9 +5,13 @@ on:
     branches: [main]
     paths-ignore:
       - source.json
+      - android-update.json
       - README.md
       - supabase/migrations/**
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: mealflow-android-apk
@@ -38,6 +42,16 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Prepare Android release metadata
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./app.json').expo.version")
+          VERSION_CODE=$(node -p "require('./app.json').expo.android.versionCode")
+          RELEASE_TAG="android-v${VERSION}-b${GITHUB_RUN_NUMBER}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
       - name: Generate app icon
         run: npm run generate:icon
 
@@ -49,7 +63,6 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
-
           path = Path('android/app/build.gradle')
           source = path.read_text()
           pattern = r'(release\s*\{\s*\n)'
@@ -82,3 +95,50 @@ jobs:
           name: MealFlow-Android-APK
           path: release/MealFlow-Android.apk
           if-no-files-found: error
+
+      - name: Publish Android release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            release/MealFlow-Android.apk \
+            --target "$GITHUB_SHA" \
+            --title "MealFlow Android ${{ steps.meta.outputs.version }} (Build ${{ github.run_number }})" \
+            --notes "Automatischer signierter Android-Sideload-Build aus main." \
+            --latest=false
+
+      - name: Generate Android updater manifest
+        run: |
+          RELEASE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          APK_SIZE=$(stat -c%s release/MealFlow-Android.apk)
+          APK_SHA256=$(sha256sum release/MealFlow-Android.apk | awk '{print $1}')
+          DOWNLOAD_URL="https://github.com/redshoxx/MealFlow/releases/download/${{ steps.meta.outputs.tag }}/MealFlow-Android.apk"
+          cat > android-update.json <<EOF
+          {
+            "version": "${{ steps.meta.outputs.version }}",
+            "versionCode": ${{ steps.meta.outputs.version_code }},
+            "releasedAt": "$RELEASE_DATE",
+            "downloadUrl": "$DOWNLOAD_URL",
+            "size": $APK_SIZE,
+            "sha256": "$APK_SHA256"
+          }
+          EOF
+          python3 -m json.tool android-update.json >/dev/null
+
+      - name: Publish Android updater manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CONTENT=$(base64 -w 0 android-update.json)
+          API_PATH="repos/${GITHUB_REPOSITORY}/contents/android-update.json"
+          for ATTEMPT in 1 2 3 4 5; do
+            CURRENT_SHA=$(gh api "$API_PATH?ref=main" --jq '.sha' 2>/dev/null || true)
+            if [ -n "$CURRENT_SHA" ]; then
+              if gh api --method PUT "$API_PATH" -f message="chore: update Android updater manifest [skip ci]" -f content="$CONTENT" -f branch="main" -f sha="$CURRENT_SHA" >/dev/null; then exit 0; fi
+            else
+              if gh api --method PUT "$API_PATH" -f message="chore: create Android updater manifest [skip ci]" -f content="$CONTENT" -f branch="main" >/dev/null; then exit 0; fi
+            fi
+            sleep $((ATTEMPT * 2))
+          done
+          echo "Could not publish android-update.json after retries" >&2
+          exit 1
