@@ -149,95 +149,103 @@ export function EmptyState({
   );
 }
 
-const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  headerText: {
-    flex: 1,
-    gap: 4,
-  },
-  eyebrow: {
-    ...typography.label,
-    color: colors.accent,
-    textTransform: 'uppercase',
-  },
-  heading: {
-    ...typography.h1,
-    color: colors.text,
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
-    maxWidth: 360,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionButton: {
-    minHeight: 50,
-    paddingHorizontal: 18,
-    borderRadius: radius.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  actionButtonText: {
-    ...typography.bodyStrong,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    ...shadow,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
-    ...typography.title,
-    color: colors.text,
-  },
-  sectionAction: {
-    ...typography.caption,
-    color: colors.accent,
-    fontWeight: '700',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 30,
-    paddingHorizontal: 22,
-    gap: 8,
-  },
-  emptyIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    backgroundColor: colors.accentSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-  },
-  emptyTitle: {
-    ...typography.title,
-    color: colors.text,
-    textAlign: 'center',
-  },
-  emptyText: {
-    ...typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    maxWidth: 310,
-  },
-});
+function createStyles() {
+  return StyleSheet.create({
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+    },
+    headerText: {
+      flex: 1,
+      gap: 4,
+    },
+    eyebrow: {
+      ...typography.label,
+      color: colors.accent,
+      textTransform: 'uppercase',
+    },
+    heading: {
+      ...typography.h1,
+      color: colors.text,
+    },
+    subtitle: {
+      ...typography.body,
+      color: colors.textSecondary,
+      maxWidth: 360,
+    },
+    iconButton: {
+      width: 44,
+      height: 44,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    actionButton: {
+      minHeight: 50,
+      paddingHorizontal: 18,
+      borderRadius: radius.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    actionButtonText: {
+      ...typography.bodyStrong,
+    },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      ...shadow,
+    },
+    sectionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    sectionTitle: {
+      ...typography.title,
+      color: colors.text,
+    },
+    sectionAction: {
+      ...typography.caption,
+      color: colors.accent,
+      fontWeight: '700',
+    },
+    emptyState: {
+      alignItems: 'center',
+      paddingVertical: 30,
+      paddingHorizontal: 22,
+      gap: 8,
+    },
+    emptyIcon: {
+      width: 52,
+      height: 52,
+      borderRadius: 18,
+      backgroundColor: colors.accentSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 2,
+    },
+    emptyTitle: {
+      ...typography.title,
+      color: colors.text,
+      textAlign: 'center',
+    },
+    emptyText: {
+      ...typography.body,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      maxWidth: 310,
+    },
+  });
+}
+
+let styles = createStyles();
+
+export function refreshUiComponentStyles() {
+  styles = createStyles();
+}
