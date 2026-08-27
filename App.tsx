@@ -43,6 +43,7 @@ import {
   loadShopping,
   recordCookedMeal,
   renameHousehold,
+  removeHouseholdMember,
   saveMeal,
   saveSaskiaMeal,
   setShoppingDone,
@@ -329,6 +330,7 @@ function QuantitySheet({ visible, amount, unit, onClose, onDone }: { visible: bo
 }
 
 function HouseholdSheet({ visible, household, invitations, onClose, onChanged }: { visible: boolean; household: Household; invitations: HouseholdInvitation[]; onClose: () => void; onChanged: () => Promise<void> }) {
+  const insets = useSafeAreaInsets();
   const [joinCode, setJoinCode] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [householdName, setHouseholdName] = useState(household.name);
@@ -392,6 +394,26 @@ function HouseholdSheet({ visible, household, invitations, onClose, onChanged }:
     await onChanged();
   });
 
+  const confirmRemoveMember = (member: Household['members'][number]) => {
+    Alert.alert(
+      'Mitglied entfernen',
+      `Soll ${member.displayName} wirklich aus „${household.name}“ entfernt werden?`,
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Entfernen',
+          style: 'destructive',
+          onPress: () => {
+            void run(async () => {
+              await removeHouseholdMember(household.id, member.userId);
+              await onChanged();
+            });
+          },
+        },
+      ],
+    );
+  };
+
   const accept = (invitation: HouseholdInvitation) => run(async () => {
     await acceptHouseholdInvitation(invitation.id);
     await onChanged();
@@ -400,7 +422,7 @@ function HouseholdSheet({ visible, household, invitations, onClose, onChanged }:
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" statusBarTranslucent={false} onRequestClose={onClose}>
-      <SafeAreaView style={styles.fullModal} edges={['top', 'bottom']} {...swipeBack.panHandlers}>
+      <SafeAreaView style={[styles.fullModal, { paddingTop: Math.max(insets.top + 6, Platform.OS === 'ios' ? 54 : 30) }]} edges={['bottom']} {...swipeBack.panHandlers}>
         <View style={styles.fullModalHeader}><IconButton icon="arrow-left" onPress={onClose} accessibilityLabel="Zurück" /><Text style={styles.fullModalTitle}>Haushalt</Text><View style={styles.headerSpacer} /></View>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.formContent}>
           <SurfaceCard style={styles.householdHero}>
@@ -412,7 +434,7 @@ function HouseholdSheet({ visible, household, invitations, onClose, onChanged }:
 
           <SectionTitle title="Mitglieder" />
           <SurfaceCard style={styles.listCard}>{household.members.map((member) => <View key={member.userId} style={styles.memberPermissionBlock}>
-            <View style={styles.memberRow}><View style={styles.avatar}><Text style={styles.avatarText}>{member.displayName.slice(0, 1).toUpperCase()}</Text></View><View style={styles.flex1}><Text style={styles.memberName}>{member.displayName}{member.displayName === household.myDisplayName ? ' · Du' : ''}</Text><Text style={styles.memberMeta}>{member.role === 'owner' ? 'Ersteller · darf immer einladen' : member.role === 'admin' ? 'Admin' : 'Mitglied'}{member.role !== 'owner' && member.canInvite ? ' · darf einladen' : ''}</Text></View></View>
+            <View style={styles.memberRow}><View style={styles.avatar}><Text style={styles.avatarText}>{member.displayName.slice(0, 1).toUpperCase()}</Text></View><View style={styles.flex1}><Text style={styles.memberName}>{member.displayName}{member.displayName === household.myDisplayName ? ' · Du' : ''}</Text><Text style={styles.memberMeta}>{member.role === 'owner' ? 'Ersteller · darf immer einladen' : member.role === 'admin' ? 'Admin' : 'Mitglied'}{member.role !== 'owner' && member.canInvite ? ' · darf einladen' : ''}</Text></View>{isOwner && member.role !== 'owner' ? <IconButton icon="account-remove-outline" tone="danger" onPress={() => confirmRemoveMember(member)} accessibilityLabel={`${member.displayName} aus Haushalt entfernen`} /> : null}</View>
             {isOwner && member.role !== 'owner' ? <View style={styles.memberInvitePermissionRow}><View style={styles.flex1}><Text style={styles.fieldLabel}>Neue Personen einladen</Text><Text style={styles.fieldHint}>Dieses Recht kann nur der Haushaltsersteller vergeben.</Text></View><Switch value={member.canInvite} disabled={busy} onValueChange={(allowed) => changeInvitePermission(member, allowed)} trackColor={{ true: colors.accentSoft }} thumbColor={member.canInvite ? colors.accent : undefined} /></View> : null}
           </View>)}</SurfaceCard>
 
@@ -822,9 +844,9 @@ function ShoppingScreen({
   const changeAmount = (delta: number) => setAmount((current) => Math.max(0.5, Math.min(40, current + delta)));
 
   return <>
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.screenContent, styles.shoppingScreenContent]}>
       <ScreenHeader title="Einkauf" subtitle={`${active.length} ${active.length === 1 ? 'Produkt' : 'Produkte'} offen · ${household.name}`} action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
-      <View style={styles.shoppingToolbar}><View><Text style={styles.shoppingToolbarLabel}>GEMEINSAME LISTE</Text><Text style={styles.shoppingToolbarTitle}>{active.length ? `${active.length} noch zu besorgen` : 'Alles erledigt'}</Text></View><Pressable onPress={openAdd} style={styles.shoppingAddButton}><MaterialCommunityIcons name="plus" size={23} color="#FFFFFF" /><Text style={styles.shoppingAddButtonText}>Produkt</Text></Pressable></View>
+      <View style={styles.shoppingToolbar}><View><Text style={styles.shoppingToolbarLabel}>GEMEINSAME LISTE</Text><Text style={styles.shoppingToolbarTitle}>{active.length ? `${active.length} noch zu besorgen` : 'Alles erledigt'}</Text></View></View>
 
       <SectionTitle title="Offen" />
       {active.length ? <SurfaceCard style={styles.listCard}>{active.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onDelete={remove} />)}</SurfaceCard> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Eure gemeinsame Einkaufsliste ist aktuell leer." actionLabel="Produkt hinzufügen" onAction={openAdd} /></SurfaceCard>}
@@ -832,6 +854,10 @@ function ShoppingScreen({
       {preferences.showCompletedShopping && completed.length ? <><SectionTitle title={`Erledigt · ${completed.length}`} /><SurfaceCard style={styles.listCard}>{completed.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onDelete={remove} />)}</SurfaceCard></> : null}
       <Text style={styles.swipeHint}>Zum Löschen den kleinen Papierkorb beim Produkt verwenden.</Text>
     </ScrollView>
+
+    <Pressable accessibilityRole="button" accessibilityLabel="Produkt hinzufügen" onPress={openAdd} style={({ pressed }) => [styles.shoppingFab, pressed && styles.shoppingFabPressed]}>
+      <MaterialCommunityIcons name="plus" size={31} color="#FFFFFF" />
+    </Pressable>
 
     <Modal transparent visible={addOpen} animationType="fade" presentationStyle="overFullScreen" onRequestClose={() => setAddOpen(false)}>
       <KeyboardAvoidingView style={styles.modalFlex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -1189,7 +1215,10 @@ function createStyles() {
   startTabChipText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
   startTabChipTextActive: { color: '#FFFFFF' },
 
+  shoppingScreenContent: { paddingBottom: 112 },
   shoppingToolbar: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  shoppingFab: { position: 'absolute', right: 18, bottom: 18, width: 58, height: 58, borderRadius: 29, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', ...getShadow() },
+  shoppingFabPressed: { opacity: 0.84, transform: [{ scale: 0.96 }] },
   shoppingToolbarLabel: { ...typography.label, color: colors.textTertiary },
   shoppingToolbarTitle: { ...typography.title, color: colors.text, marginTop: 2 },
   shoppingAddButton: { minHeight: 46, paddingHorizontal: 15, borderRadius: radius.md, backgroundColor: colors.accent, flexDirection: 'row', alignItems: 'center', gap: 6 },

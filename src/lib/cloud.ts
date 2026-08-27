@@ -209,6 +209,14 @@ export async function setHouseholdInvitePermission(householdId: string, userId: 
   if (error) throw error;
 }
 
+export async function removeHouseholdMember(householdId: string, userId: string) {
+  const { error } = await requireCloud().rpc('remove_household_member', {
+    target_household: householdId,
+    target_user: userId,
+  });
+  if (error) throw error;
+}
+
 export async function loadPendingHouseholdInvitations(): Promise<HouseholdInvitation[]> {
   const user = await requireUser();
   if (!user.email) return [];

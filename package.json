@@ -1,6 +1,6 @@
 {
   "name": "mealflow",
-  "version": "2.2.5",
+  "version": "2.2.6",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {

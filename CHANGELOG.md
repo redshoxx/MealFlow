@@ -1,5 +1,13 @@
 # MealFlow Changelog
 
+## 2.2.6
+
+- Einkaufsliste: Produkt-Hinzufügen ist jetzt ein einzelner schwebender Plus-Button unten rechts.
+- Haushaltsersteller können andere Mitglieder mit Bestätigung aus dem Haushalt entfernen.
+- Entfernen von Mitgliedern ist zusätzlich serverseitig über eine geschützte Supabase-RPC abgesichert.
+- Haushaltsseite berücksichtigt Statusleiste, Notch und Dynamic Island auf iPhone sowie Android-Statusleisten explizit.
+- Version 2.2.6, iOS Build 18, Android Version Code 18.
+
 ## 2.2.5
 
 - Wochenplan unterstützt jetzt zwei getrennte Gerichte pro Tag.
