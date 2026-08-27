@@ -1,0 +1,125 @@
+name: Apply MealFlow 2.2.1 Pantry
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-v221-pantry.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Replace calories with pantry
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          p = Path('App.tsx')
+          s = p.read_text()
+
+          old_import = "import { NutritionScreen, refreshNutritionStyles } from './src/screens/NutritionScreen';"
+          new_import = "import { InventoryScreen, refreshInventoryStyles } from './src/screens/InventoryScreen';"
+          if old_import not in s:
+              raise SystemExit('Nutrition import anchor missing')
+          s = s.replace(old_import, new_import, 1)
+
+          s = s.replace("    { key: 'kalorien', label: 'Kalorien' },", "    { key: 'vorrat', label: 'Vorrat' },", 1)
+          s = s.replace("    { key: 'kalorien', label: 'Kalorien', icon: 'chart-donut-variant', active: 'chart-donut' },", "    { key: 'vorrat', label: 'Vorrat', icon: 'archive-outline', active: 'archive' },", 1)
+
+          old_quick = '''<Pressable style={styles.quickAction} onPress={() => onNavigate('kalorien')}><View style={styles.quickIcon}><MaterialCommunityIcons name="chart-donut" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Kalorien</Text><Text style={styles.quickText}>Persönliche Tagesbilanz und Lebensmittel per Barcode erfassen.</Text></Pressable>'''
+          new_quick = '''<Pressable style={styles.quickAction} onPress={() => onNavigate('vorrat')}><View style={styles.quickIcon}><MaterialCommunityIcons name="archive-outline" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Vorrat</Text><Text style={styles.quickText}>Gekaufte Produkte scannen, Mengen und optionales MHD verwalten.</Text></Pressable>'''
+          if old_quick not in s:
+              raise SystemExit('Home calorie quick action missing')
+          s = s.replace(old_quick, new_quick, 1)
+
+          old_render = "        {tab === 'kalorien' ? <NutritionScreen onSettings={() => setSettingsOpen(true)} hapticsEnabled={preferences.hapticsEnabled} /> : null}"
+          new_render = "        {tab === 'vorrat' ? <InventoryScreen onSettings={() => setSettingsOpen(true)} hapticsEnabled={preferences.hapticsEnabled} /> : null}"
+          if old_render not in s:
+              raise SystemExit('Nutrition render anchor missing')
+          s = s.replace(old_render, new_render, 1)
+
+          old_refresh = '''function refreshAppStyles() {
+            styles = createStyles();
+            refreshUiComponentStyles();
+            refreshNutritionStyles();
+          }'''
+          new_refresh = '''function refreshAppStyles() {
+            styles = createStyles();
+            refreshUiComponentStyles();
+            refreshInventoryStyles();
+          }'''
+          if old_refresh not in s:
+              raise SystemExit('refresh styles anchor missing')
+          s = s.replace(old_refresh, new_refresh, 1)
+
+          p.write_text(s)
+
+          package_path = Path('package.json')
+          package = json.loads(package_path.read_text())
+          package['version'] = '2.2.1'
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n')
+
+          app_path = Path('app.json')
+          app = json.loads(app_path.read_text())
+          app['expo']['version'] = '2.2.1'
+          app['expo']['ios']['buildNumber'] = '13'
+          app['expo']['android']['versionCode'] = 13
+          app_path.write_text(json.dumps(app, ensure_ascii=False, indent=2) + '\n')
+
+          changelog_path = Path('CHANGELOG.md')
+          changelog = changelog_path.read_text()
+          if '## 2.2.1' not in changelog:
+              entry = '''# MealFlow Changelog
+
+          ## 2.2.1
+
+          - Kalorienseite aus der Hauptnavigation entfernt und durch den gemeinsamen Vorrat ersetzt.
+          - Erledigte Einkäufe erscheinen automatisch im Bereich „Nach dem Einkauf“.
+          - Gekaufte Produkte werden klar als „noch zu scannen“ oder bereits erfasst angezeigt.
+          - Barcode-Scanner erkennt Produkte über Open Food Facts und übernimmt Name, Marke und Bild.
+          - Gescannte Einkaufsprodukte werden dauerhaft als in den Vorrat übernommen markiert.
+          - Menge und Einheit werden beim Übernehmen festgelegt und können später bearbeitet werden.
+          - Optionales Mindesthaltbarkeitsdatum mit Hinweisen für bald fällige oder überschrittene MHDs.
+          - Produkte können jederzeit vollständig manuell und ohne Barcode angelegt werden.
+          - Vorratsprodukte können gesucht, bearbeitet und nach Verbrauch entfernt werden.
+          - Vorrat ist für alle Mitglieder des aktiven MealFlow-Haushalts synchronisiert.
+          - Startseiten-Einstellung „Kalorien“ wird automatisch auf „Vorrat“ migriert.
+          - App-Version 2.2.1, iOS Build 13, Android Version Code 13.
+
+          '''
+              if changelog.startswith('# MealFlow Changelog\n\n'):
+                  changelog = entry + changelog[len('# MealFlow Changelog\n\n'):]
+              else:
+                  changelog = entry + changelog
+              changelog_path.write_text(changelog)
+          PY
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit MealFlow 2.2.1 pantry
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-v221-pantry.yml
+          git add App.tsx package.json package-lock.json app.json CHANGELOG.md
+          git commit -m "Build MealFlow 2.2.1 pantry workflow"
+          git push origin main
