@@ -367,7 +367,7 @@ export async function saveSaskiaMeal(plannedDate: string, meal: string | null) {
   }
   const { error } = await requireCloud()
     .from('meal_plan_entries')
-    .upsert({ household_id: householdId, owner_id: user.id, planned_date: plannedDate, meal: null, meal_saskia: clean }, { onConflict: 'household_id,planned_date' });
+    .upsert({ household_id: householdId, owner_id: user.id, planned_date: plannedDate, meal_saskia: clean }, { onConflict: 'household_id,planned_date' });
   if (error) throw error;
 }
 
