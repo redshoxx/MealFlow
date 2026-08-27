@@ -1,0 +1,29 @@
+name: Apply redesign StyleSheet fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-redesign-style.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply compatibility fix
+        run: |
+          sed -i 's/StyleSheet\.absoluteFillObject/StyleSheet.absoluteFill/g' App.tsx
+          git rm -f src/types/react-native-compat.d.ts || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add App.tsx
+          if git diff --cached --quiet; then
+            echo "No changes required"
+            exit 0
+          fi
+          git commit -m "Fix React Native StyleSheet API"
+          git push
