@@ -2,24 +2,32 @@
   "expo": {
     "name": "MealFlow",
     "slug": "mealflow",
-    "version": "2.1.5",
+    "version": "2.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "at.mealflow.app",
-      "buildNumber": "11"
+      "buildNumber": "12"
     },
     "android": {
       "package": "at.mealflow.app",
       "adaptiveIcon": {
         "backgroundColor": "#214F33"
       },
-      "versionCode": 11
+      "versionCode": 12
     },
     "plugins": [
       "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "MealFlow benötigt die Kamera, um Barcodes von Lebensmitteln zu scannen.",
+          "barcodeScannerEnabled": true,
+          "recordAudioAndroid": false
+        }
+      ],
       [
         "expo-speech-recognition",
         {
