@@ -19,11 +19,11 @@
       "versions": [
         {
           "version": "2.0.0",
-          "buildVersion": "36",
-          "date": "2026-08-27T11:17:58Z",
+          "buildVersion": "37",
+          "date": "2026-08-27T11:18:15Z",
           "localizedDescription": "Automatisches MealFlow Update aus GitHub.",
-          "downloadURL": "https://github.com/redshoxx/MealFlow/releases/download/sidestore-v2.0.0-b36/MealFlow-SideStore.ipa",
-          "size": 10276395
+          "downloadURL": "https://github.com/redshoxx/MealFlow/releases/download/sidestore-v2.0.0-b37/MealFlow-SideStore.ipa",
+          "size": 10276394
         }
       ],
       "appPermissions": {
