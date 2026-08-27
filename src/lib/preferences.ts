@@ -27,14 +27,15 @@ export async function loadPreferences(): Promise<AppPreferences> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_PREFERENCES;
-    const parsed = JSON.parse(raw) as Partial<AppPreferences> & { startTab?: string };
-    const migratedStartTab = parsed.startTab === 'rezepte' ? 'kalorien' : parsed.startTab;
+    const parsed = JSON.parse(raw) as Partial<AppPreferences> & Record<string, unknown>;
+    const storedStartTab = typeof parsed.startTab === 'string' ? String(parsed.startTab) : '';
+    const migratedStartTab = storedStartTab === 'rezepte' ? 'kalorien' : storedStartTab;
     return {
       ...DEFAULT_PREFERENCES,
       ...parsed,
       cozyMode: Boolean(parsed.cozyMode),
       themeMode: ['system', 'light', 'dark'].includes(String(parsed.themeMode)) ? parsed.themeMode as ThemeMode : 'system',
-      startTab: ['heute', 'woche', 'einkauf', 'kalorien'].includes(String(migratedStartTab)) ? migratedStartTab as StartTab : 'heute',
+      startTab: ['heute', 'woche', 'einkauf', 'kalorien'].includes(migratedStartTab) ? migratedStartTab as StartTab : 'heute',
     };
   } catch {
     return DEFAULT_PREFERENCES;
