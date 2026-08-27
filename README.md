@@ -1,4 +1,4 @@
-# MealFlow 1.2
+# MealFlow 1.3
 
 MealFlow ist eine gemeinsame iPhone-/Android-App für Abendessen-Wochenplanung, Einkaufsliste mit Mengen und Einheiten sowie Rezeptsuche aus dem Internet.
 
@@ -6,8 +6,8 @@ MealFlow ist eine gemeinsame iPhone-/Android-App für Abendessen-Wochenplanung, 
 
 - iPhone: IPA für SideStore
 - Android: signierte, installierbare APK
-- Gemeinsame Cloud-Synchronisierung über Appwrite
-- Appwrite Account + TablesDB + Realtime
+- Gemeinsame Cloud-Synchronisierung über Supabase
+- Supabase Auth + PostgreSQL + Realtime
 - Optimiert für iPhone 12 und responsiv für Android
 - Keine Alexa-Integration
 
@@ -22,26 +22,20 @@ MealFlow ist eine gemeinsame iPhone-/Android-App für Abendessen-Wochenplanung, 
 - Rezeptdetails mit Zutaten
 - Rezeptzutaten direkt auf die Einkaufsliste übernehmen
 - Rezept direkt in den Wochenplan übernehmen
-- Appwrite E-Mail-/Passwort-Login
+- Supabase E-Mail-/Passwort-Login
 - Realtime-Synchronisierung zwischen iPhone und Android
-- Lokaler Demo-Modus, solange Appwrite nicht konfiguriert ist
 
-## Appwrite
+## Supabase
 
-Die App verwendet den offiziellen React-Native-Appwrite-SDK.
+Das aktuell verbundene Supabase-Projekt wird über `EXPO_PUBLIC_SUPABASE_URL` und `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` angesprochen.
 
-Die vollständige Einrichtung steht in `appwrite/SETUP.md`.
+Die Tabellen `shopping_items` und `meal_plan` sind mit Row Level Security geschützt. Jeder Benutzer sieht und verändert nur Datensätze, deren `owner_id` seiner Supabase-User-ID entspricht.
 
-Kurzfassung:
+Die Migration liegt unter:
 
-1. Appwrite-Projekt erstellen.
-2. Apple- und Android-Plattform mit `at.mealflow.app` hinzufügen.
-3. Datenbank `mealflow` erstellen.
-4. Tabellen `shopping_items` und `meal_plan` gemäß `appwrite/SETUP.md` anlegen.
-5. Row security aktivieren und nur CREATE für authentifizierte Benutzer auf Tabellenebene erlauben.
-6. `.env.example` nach `.env` kopieren und Endpoint/IDs einsetzen.
+`supabase/migrations/202608271210_create_mealflow_core.sql`
 
-Die `EXPO_PUBLIC_APPWRITE_*` Werte sind öffentliche Client-Konfiguration. **Keinen Appwrite API Key in die Mobile-App eintragen.**
+Wichtig: Ein `SUPABASE_SECRET_KEY` gehört niemals in die Mobile-App, `.env.example`, GitHub Actions oder das Repository.
 
 ## Lokaler Start
 
@@ -61,23 +55,23 @@ Ergebnis: `MealFlow-Android.apk`
 
 ## iPhone / SideStore
 
-Der Workflow **Build iOS IPA for SideStore** erstellt eine unsignierte App und verpackt sie als `MealFlow-SideStore.ipa`.
+Der Workflow **Build iOS IPA for SideStore** erstellt eine IPA für die Installation über SideStore.
 
-SideStore signiert die IPA beim Import mit dem persönlichen Apple-ID-Entwicklungszertifikat neu.
+Ergebnis: `MealFlow-SideStore.ipa`
 
 ## Wichtige Projektdateien
 
 - `App.tsx` – Mobile UI und App-Logik
-- `src/lib/appwrite.ts` – Appwrite Client, Account und Realtime
-- `src/lib/cloud.ts` – TablesDB-Zugriff und Synchronisierung
+- `src/lib/supabase.ts` – Supabase Client und Auth-Session
+- `src/lib/cloud.ts` – PostgreSQL-Datenzugriff für Einkaufsliste und Wochenplan
 - `src/lib/recipes.ts` – Internet-Rezeptsuche
-- `appwrite/SETUP.md` – Appwrite-Datenbank- und Berechtigungssetup
+- `supabase/migrations/202608271210_create_mealflow_core.sql` – Datenbankschema, RLS und Realtime
 - `.github/workflows/build-android-apk.yml` – APK Build
 - `.github/workflows/build-ios-sidestore.yml` – SideStore IPA Build
 
 ## Sicherheit
 
-- Kein Appwrite API Key im Client
-- Private Row-Permissions pro Benutzer
-- Keine globale READ/UPDATE/DELETE-Freigabe
-- `.env` wird nicht committed
+- Nur der öffentliche Supabase Publishable Key wird im Mobile-Client verwendet
+- Kein Secret Key im Repository
+- Row Level Security ist für beide Tabellen aktiviert
+- Datenzugriffe sind an `auth.uid()` gebunden
