@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type StartTab = 'heute' | 'woche' | 'einkauf' | 'kalorien';
+export type StartTab = 'heute' | 'woche' | 'einkauf' | 'vorrat';
 
 export type AppPreferences = {
   themeMode: ThemeMode;
@@ -29,13 +29,13 @@ export async function loadPreferences(): Promise<AppPreferences> {
     if (!raw) return DEFAULT_PREFERENCES;
     const parsed = JSON.parse(raw) as Partial<AppPreferences> & Record<string, unknown>;
     const storedStartTab = typeof parsed.startTab === 'string' ? String(parsed.startTab) : '';
-    const migratedStartTab = storedStartTab === 'rezepte' ? 'kalorien' : storedStartTab;
+    const migratedStartTab = storedStartTab === 'rezepte' || storedStartTab === 'kalorien' ? 'vorrat' : storedStartTab;
     return {
       ...DEFAULT_PREFERENCES,
       ...parsed,
       cozyMode: Boolean(parsed.cozyMode),
       themeMode: ['system', 'light', 'dark'].includes(String(parsed.themeMode)) ? parsed.themeMode as ThemeMode : 'system',
-      startTab: ['heute', 'woche', 'einkauf', 'kalorien'].includes(migratedStartTab) ? migratedStartTab as StartTab : 'heute',
+      startTab: ['heute', 'woche', 'einkauf', 'vorrat'].includes(migratedStartTab) ? migratedStartTab as StartTab : 'heute',
     };
   } catch {
     return DEFAULT_PREFERENCES;
