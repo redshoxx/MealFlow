@@ -55,9 +55,22 @@ Ergebnis: `MealFlow-Android.apk`
 
 ## iPhone / SideStore
 
-Der Workflow **Build iOS IPA for SideStore** erstellt eine IPA für die Installation über SideStore.
+Der Workflow **Build iOS IPA for SideStore** baut bei relevanten Änderungen auf `main` automatisch eine neue SideStore-IPA.
 
-Ergebnis: `MealFlow-SideStore.ipa`
+Dabei passiert automatisch:
+
+1. eine eindeutige iOS-Buildnummer wird vergeben,
+2. `MealFlow-SideStore.ipa` wird gebaut,
+3. ein GitHub Release wird erstellt,
+4. `source.json` wird mit der neuen Version aktualisiert.
+
+SideStore Source:
+
+`https://raw.githubusercontent.com/redshoxx/MealFlow/main/source.json`
+
+Diese Source muss auf dem iPhone nur einmal in SideStore hinzugefügt werden. Danach kann SideStore neue MealFlow-Versionen anhand von `version` und `buildVersion` erkennen und als Update anbieten.
+
+Hinweis: SideStores automatischer App-Refresh erneuert die 7-Tage-Signatur. Ein neues App-Binary wird aus Sicherheits-/iOS-Gründen nicht garantiert vollständig unbeaufsichtigt installiert; verfügbare MealFlow-Updates werden über die Source erkannt und können in SideStore aktualisiert werden.
 
 ## Wichtige Projektdateien
 
@@ -67,7 +80,8 @@ Ergebnis: `MealFlow-SideStore.ipa`
 - `src/lib/recipes.ts` – Internet-Rezeptsuche
 - `supabase/migrations/202608271210_create_mealflow_core.sql` – Datenbankschema, RLS und Realtime
 - `.github/workflows/build-android-apk.yml` – APK Build
-- `.github/workflows/build-ios-sidestore.yml` – SideStore IPA Build
+- `.github/workflows/build-ios-sidestore.yml` – SideStore IPA Build + automatische Releases
+- `source.json` – SideStore/AltStore Update-Feed
 
 ## Sicherheit
 
