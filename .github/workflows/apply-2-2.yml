@@ -1,0 +1,127 @@
+name: Apply MealFlow 2.2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-2-2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apply MealFlow 2.2 UI changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('App.tsx')
+          s = p.read_text()
+
+          import_anchor = "import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';"
+          nutrition_import = import_anchor + "\nimport { NutritionScreen, refreshNutritionStyles } from './src/screens/NutritionScreen';"
+          if "./src/screens/NutritionScreen" not in s:
+              if import_anchor not in s:
+                  raise SystemExit('preferences import anchor missing')
+              s = s.replace(import_anchor, nutrition_import, 1)
+
+          old_start = "    { key: 'rezepte', label: 'Rezepte' },"
+          if old_start in s:
+              s = s.replace(old_start, "    { key: 'kalorien', label: 'Kalorien' },", 1)
+
+          old_quick = '''<Pressable style={styles.quickAction} onPress={() => onNavigate('rezepte')}><View style={styles.quickIcon}><MaterialCommunityIcons name="chef-hat" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Rezept finden</Text><Text style={styles.quickText}>Beliebte Web-Rezepte, Filter und Kochverlauf nutzen.</Text></Pressable>'''
+          new_quick = '''<Pressable style={styles.quickAction} onPress={() => onNavigate('kalorien')}><View style={styles.quickIcon}><MaterialCommunityIcons name="chart-donut" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Kalorien</Text><Text style={styles.quickText}>Persönliche Tagesbilanz und Lebensmittel per Barcode erfassen.</Text></Pressable>'''
+          if old_quick not in s:
+              raise SystemExit('home recipe quick action missing')
+          s = s.replace(old_quick, new_quick, 1)
+
+          tab_start = s.index('function TabBar(')
+          tab_end = s.index('function MainApp()', tab_start)
+          new_tab = '''function TabBar({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
+            const tabs: { key: Tab; label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; active: React.ComponentProps<typeof MaterialCommunityIcons>['name'] }[] = [
+              { key: 'heute', label: 'Heute', icon: 'home-variant-outline', active: 'home-variant' },
+              { key: 'woche', label: 'Woche', icon: 'calendar-week-outline', active: 'calendar-week' },
+              { key: 'einkauf', label: 'Einkauf', icon: 'cart-outline', active: 'cart' },
+              { key: 'kalorien', label: 'Kalorien', icon: 'chart-donut-variant', active: 'chart-donut' },
+            ];
+            return <View style={styles.tabBar}>{tabs.map((item) => { const active = tab === item.key; return <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => onChange(item.key)} style={styles.tabItem}><MaterialCommunityIcons name={active ? item.active : item.icon} size={23} color={active ? colors.accent : colors.textTertiary} /><Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{item.label}</Text></Pressable>; })}</View>;
+          }
+
+          '''
+          s = s[:tab_start] + new_tab + s[tab_end:]
+
+          old_render = "        {tab === 'rezepte' ? <RecipesScreen ownRecipes={ownRecipes} setOwnRecipes={setOwnRecipes} history={history} meals={meals} onAddIngredients={addRecipeIngredients} onPlan={setRecipeToPlan} onSettings={() => setSettingsOpen(true)} /> : null}"
+          new_render = "        {tab === 'kalorien' ? <NutritionScreen onSettings={() => setSettingsOpen(true)} hapticsEnabled={preferences.hapticsEnabled} /> : null}"
+          if old_render not in s:
+              raise SystemExit('recipes render anchor missing')
+          s = s.replace(old_render, new_render, 1)
+
+          old_refresh = '''function refreshAppStyles() {
+            styles = createStyles();
+            refreshUiComponentStyles();
+          }'''
+          new_refresh = '''function refreshAppStyles() {
+            styles = createStyles();
+            refreshUiComponentStyles();
+            refreshNutritionStyles();
+          }'''
+          if old_refresh not in s:
+              raise SystemExit('refreshAppStyles anchor missing')
+          s = s.replace(old_refresh, new_refresh, 1)
+
+          p.write_text(s)
+
+          changelog = Path('CHANGELOG.md')
+          c = changelog.read_text()
+          if '## 2.2.0' not in c:
+              entry = '''# MealFlow Changelog
+
+          ## 2.2.0
+
+          - Rezeptseite aus der Hauptnavigation entfernt und durch einen persönlichen Kalorienzähler ersetzt.
+          - Individuelle Ernährungseinträge und Tagesziele pro Benutzer mit eigener Supabase-RLS eingeführt.
+          - Professionelle Tagesübersicht mit verbleibenden Kalorien, Tagesziel und Makro-Fortschritt.
+          - Frühstück, Mittagessen, Abendessen und Snacks als übersichtliche getrennte Bereiche.
+          - Barcode-Scanner über expo-camera für EAN-13, EAN-8 und UPC-Barcodes.
+          - Produktdaten, Produktbilder und Nährwerte werden nach dem Scan über Open Food Facts geladen.
+          - Mengenänderung berechnet Kalorien, Eiweiß, Kohlenhydrate und Fett live auf die gewählte Portion um.
+          - Persönliche Kalorien- und Makroziele können direkt in der Kalorienansicht angepasst werden.
+          - Datumsnavigation ermöglicht das Anzeigen vergangener Ernährungstage.
+          - Startseiten-Einstellung „Rezepte“ wird automatisch auf „Kalorien“ migriert.
+          - App-Version 2.2.0, iOS Build 12, Android Version Code 12.
+
+          '''
+              if c.startswith('# MealFlow Changelog\n\n'):
+                  c = entry + c[len('# MealFlow Changelog\n\n'):]
+              else:
+                  c = entry + c
+              changelog.write_text(c)
+          PY
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit MealFlow 2.2
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-2-2.yml
+          git add App.tsx CHANGELOG.md package-lock.json
+          git commit -m "Build MealFlow 2.2 calorie tracker"
+          git push origin main
