@@ -60,7 +60,15 @@ export const supabase = isCloudConfigured ? {
     },
     onAuthStateChange(callback: AuthListener) {
       listeners.add(callback);
-      return { data: { subscription: { unsubscribe: () => listeners.delete(callback) } } };
+      return {
+        data: {
+          subscription: {
+            unsubscribe: () => {
+              listeners.delete(callback);
+            },
+          },
+        },
+      };
     },
     async signOut() {
       await signOut();
