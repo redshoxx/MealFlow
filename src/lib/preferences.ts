@@ -5,6 +5,7 @@ export type StartTab = 'heute' | 'woche' | 'einkauf' | 'rezepte';
 
 export type AppPreferences = {
   themeMode: ThemeMode;
+  cozyMode: boolean;
   compactShopping: boolean;
   showCompletedShopping: boolean;
   hapticsEnabled: boolean;
@@ -15,6 +16,7 @@ const STORAGE_KEY = 'mealflow.preferences.v2.1.4';
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
   themeMode: 'system',
+  cozyMode: false,
   compactShopping: true,
   showCompletedShopping: true,
   hapticsEnabled: true,
@@ -29,6 +31,7 @@ export async function loadPreferences(): Promise<AppPreferences> {
     return {
       ...DEFAULT_PREFERENCES,
       ...parsed,
+      cozyMode: Boolean(parsed.cozyMode),
       themeMode: ['system', 'light', 'dark'].includes(String(parsed.themeMode)) ? parsed.themeMode as ThemeMode : 'system',
       startTab: ['heute', 'woche', 'einkauf', 'rezepte'].includes(String(parsed.startTab)) ? parsed.startTab as StartTab : 'heute',
     };
