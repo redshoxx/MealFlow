@@ -21,7 +21,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply update
-        run: python3 scripts/apply-v222.py
+        run: |
+          python3 scripts/apply-v222.py
+          python3 scripts/fix-v222-output.py
       - name: Install dependencies
         run: |
           npm install --ignore-scripts
@@ -33,7 +35,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/apply-v222-quality.yml .github/workflows/recover-v222-quality.yml
-          git rm scripts/apply-v222.py
+          git rm scripts/apply-v222.py scripts/fix-v222-output.py
           git add App.tsx app.json package.json package-lock.json CHANGELOG.md src/lib/expiryNotifications.ts src/lib/inventory.ts src/screens/InventoryScreen.tsx
           git commit -m "Build MealFlow 2.2.2 quality update"
           git push origin main
