@@ -1,7 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { colors, radius, shadow, spacing, typography } from './theme';
+import { colors, getShadow, radius, spacing, typography } from './theme';
 
 export function ScreenHeader({
   eyebrow,
@@ -199,7 +199,7 @@ function createStyles() {
       borderRadius: radius.lg,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      ...shadow,
+      ...getShadow(),
     },
     sectionTitleRow: {
       flexDirection: 'row',
