@@ -838,7 +838,7 @@ const styles = StyleSheet.create({
   todayPill: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, overflow: 'hidden' },
   dayMeal: { ...typography.bodyStrong, color: colors.text, marginTop: 2 },
   dayMealEmpty: { color: colors.textTertiary, fontWeight: '400' },
-  modalOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.overlay },
+  modalOverlay: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay },
   bottomSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 26, position: 'absolute', left: 0, right: 0, bottom: 0 },
   settingsSheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 12 },
   editorSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, gap: 12 },
