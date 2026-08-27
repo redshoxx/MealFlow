@@ -2,24 +2,34 @@
   "expo": {
     "name": "MealFlow",
     "slug": "mealflow",
-    "version": "2.1.3",
+    "version": "2.1.4",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "at.mealflow.app",
-      "buildNumber": "9"
+      "buildNumber": "10"
     },
     "android": {
       "package": "at.mealflow.app",
       "adaptiveIcon": {
         "backgroundColor": "#214F33"
       },
-      "versionCode": 9
+      "versionCode": 10
     },
     "plugins": [
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "MealFlow benötigt das Mikrofon, damit du Produkte per Sprache zur Einkaufsliste hinzufügen kannst.",
+          "speechRecognitionPermission": "MealFlow nutzt die Spracherkennung, um gesprochene Produkte in Text umzuwandeln.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
+        }
+      ]
     ]
   }
 }
