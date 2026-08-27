@@ -2,21 +2,21 @@
   "expo": {
     "name": "MealFlow",
     "slug": "mealflow",
-    "version": "2.2.4",
+    "version": "2.2.5",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "at.mealflow.app",
-      "buildNumber": "16"
+      "buildNumber": "17"
     },
     "android": {
       "package": "at.mealflow.app",
       "adaptiveIcon": {
         "backgroundColor": "#214F33"
       },
-      "versionCode": 16,
+      "versionCode": 17,
       "permissions": [
         "REQUEST_INSTALL_PACKAGES"
       ]

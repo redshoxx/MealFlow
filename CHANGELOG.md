@@ -1,5 +1,15 @@
 # MealFlow Changelog
 
+## 2.2.5
+
+- Wochenplan unterstützt jetzt zwei getrennte Gerichte pro Tag.
+- Das erste Feld bleibt das normale gemeinsame Abendessen.
+- Das zweite Feld ist dauerhaft mit „Für Saskia“ gekennzeichnet.
+- Beide Gerichte können unabhängig voneinander gespeichert, geändert und entfernt werden.
+- Wochenübersicht zeigt den Fortschritt jetzt für 14 mögliche Gerichte statt 7 Tage.
+- Realtime-Synchronisierung wurde auf beide Gerichte pro Datum erweitert.
+- Version 2.2.5, iOS Build 17, Android Version Code 17.
+
 ## 2.2.4
 
 - Absturz beim Löschen von Produkten in der Einkaufsliste behoben.

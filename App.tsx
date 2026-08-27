@@ -44,6 +44,7 @@ import {
   recordCookedMeal,
   renameHousehold,
   saveMeal,
+  saveSaskiaMeal,
   setShoppingDone,
   setHouseholdInvitePermission,
   updateMyDisplayName,
@@ -539,48 +540,118 @@ function HomeScreen({ household, meals, items, history, pantryItems, onNavigate,
   </ScrollView>;
 }
 
-function PlanScreen({ household, meals, setMeals, onSettings }: { household: Household; meals: Record<string, string>; setMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; onSettings: () => void }) {
+function PlanScreen({ household, meals, saskiaMeals, setMeals, setSaskiaMeals, onSettings }: { household: Household; meals: Record<string, string>; saskiaMeals: Record<string, string>; setMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; setSaskiaMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; onSettings: () => void }) {
   const insets = useSafeAreaInsets();
   const [editingDay, setEditingDay] = useState<string | null>(null);
   const [editingDate, setEditingDate] = useState<string | null>(null);
+  const [editingSlot, setEditingSlot] = useState<'main' | 'saskia'>('main');
   const [mealText, setMealText] = useState('');
-  const weekDays = getWeekDays(1).map((entry) => ({ ...entry, meal: meals[entry.iso]?.trim() ?? '' }));
-  const plannedCount = weekDays.filter((entry) => Boolean(entry.meal)).length;
-  const remainingCount = 7 - plannedCount;
+  const weekDays = getWeekDays(1).map((entry) => ({
+    ...entry,
+    meal: meals[entry.iso]?.trim() ?? '',
+    saskiaMeal: saskiaMeals[entry.iso]?.trim() ?? '',
+  }));
+  const plannedSlots = weekDays.reduce((count, entry) => count + (entry.meal ? 1 : 0) + (entry.saskiaMeal ? 1 : 0), 0);
+  const remainingSlots = 14 - plannedSlots;
   const startDate = weekDays[0]!.date;
   const endDate = weekDays[6]!.date;
   const rangeLabel = `${startDate.toLocaleDateString('de-AT', { day: '2-digit', month: 'short' })} – ${endDate.toLocaleDateString('de-AT', { day: '2-digit', month: 'short' })}`;
-  const closeEditor = () => { setEditingDay(null); setEditingDate(null); setMealText(''); };
-  const openEditor = (day: string, plannedDate: string) => { setEditingDay(day); setEditingDate(plannedDate); setMealText(meals[plannedDate] ?? ''); Haptics.selectionAsync().catch(() => undefined); };
+
+  const closeEditor = () => {
+    setEditingDay(null);
+    setEditingDate(null);
+    setEditingSlot('main');
+    setMealText('');
+  };
+
+  const openEditor = (day: string, plannedDate: string, slot: 'main' | 'saskia') => {
+    setEditingDay(day);
+    setEditingDate(plannedDate);
+    setEditingSlot(slot);
+    setMealText(slot === 'saskia' ? (saskiaMeals[plannedDate] ?? '') : (meals[plannedDate] ?? ''));
+    Haptics.selectionAsync().catch(() => undefined);
+  };
+
   const persist = async () => {
     if (!editingDate) return;
     const value = mealText.trim();
     const plannedDate = editingDate;
-    setMeals((current) => ({ ...current, [plannedDate]: value }));
+    const slot = editingSlot;
+    if (slot === 'saskia') setSaskiaMeals((current) => ({ ...current, [plannedDate]: value }));
+    else setMeals((current) => ({ ...current, [plannedDate]: value }));
     closeEditor();
-    try { await saveMeal(plannedDate, value || null); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined); }
-    catch (error: any) { Alert.alert('Speichern nicht möglich', germanError(error?.message)); }
+    try {
+      if (slot === 'saskia') await saveSaskiaMeal(plannedDate, value || null);
+      else await saveMeal(plannedDate, value || null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error: any) {
+      Alert.alert('Speichern nicht möglich', germanError(error?.message));
+    }
   };
+
   const removePlan = async () => {
     if (!editingDate) return;
     const plannedDate = editingDate;
-    setMeals((current) => ({ ...current, [plannedDate]: '' }));
+    const slot = editingSlot;
+    if (slot === 'saskia') setSaskiaMeals((current) => ({ ...current, [plannedDate]: '' }));
+    else setMeals((current) => ({ ...current, [plannedDate]: '' }));
     closeEditor();
-    try { await saveMeal(plannedDate, null); Haptics.selectionAsync().catch(() => undefined); }
-    catch (error: any) { Alert.alert('Planung konnte nicht entfernt werden', germanError(error?.message)); }
+    try {
+      if (slot === 'saskia') await saveSaskiaMeal(plannedDate, null);
+      else await saveMeal(plannedDate, null);
+      Haptics.selectionAsync().catch(() => undefined);
+    } catch (error: any) {
+      Alert.alert('Planung konnte nicht entfernt werden', germanError(error?.message));
+    }
   };
+
   return <>
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
-      <ScreenHeader eyebrow={`${rangeLabel} · ${household.name}`} title="Wochenplan" subtitle="Plane immer die kommende Woche – von Montag bis Sonntag." action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
+      <ScreenHeader eyebrow={`${rangeLabel} · ${household.name}`} title="Wochenplan" subtitle="Pro Tag zwei Gerichte planen – ein gemeinsames Abendessen und eines für Saskia." action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
       <SurfaceCard style={styles.weekOverviewCard}>
-        <View style={styles.weekOverviewTop}><View><Text style={styles.weekOverviewLabel}>NÄCHSTE WOCHE</Text><Text style={styles.weekOverviewTitle}>{plannedCount} von 7 Abenden geplant</Text></View><View style={styles.weekOverviewBadge}><MaterialCommunityIcons name={remainingCount === 0 ? 'check-all' : 'calendar-edit'} size={20} color={colors.accent} /><Text style={styles.weekOverviewBadgeText}>{remainingCount === 0 ? 'Fertig' : `${remainingCount} offen`}</Text></View></View>
-        <View style={styles.weekProgressTrack}><View style={[styles.weekProgressFill, { width: `${Math.round((plannedCount / 7) * 100)}%` as `${number}%` }]} /></View>
-        <View style={styles.weekStrip}>{weekDays.map((entry) => <Pressable key={entry.iso} onPress={() => openEditor(entry.day, entry.iso)} accessibilityLabel={`${entry.day}: ${entry.meal || 'noch kein Abendessen geplant'}`} style={({ pressed }) => [styles.weekStripDay, { opacity: pressed ? 0.72 : 1 }]}><Text style={styles.weekStripDow}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={styles.weekStripDate}>{entry.dayNumber}</Text><View style={[styles.weekStripDot, entry.meal ? styles.weekStripDotPlanned : styles.weekStripDotOpen]} /></Pressable>)}</View>
+        <View style={styles.weekOverviewTop}><View><Text style={styles.weekOverviewLabel}>NÄCHSTE WOCHE</Text><Text style={styles.weekOverviewTitle}>{plannedSlots} von 14 Gerichten geplant</Text></View><View style={styles.weekOverviewBadge}><MaterialCommunityIcons name={remainingSlots === 0 ? 'check-all' : 'calendar-edit'} size={20} color={colors.accent} /><Text style={styles.weekOverviewBadgeText}>{remainingSlots === 0 ? 'Fertig' : `${remainingSlots} offen`}</Text></View></View>
+        <View style={styles.weekProgressTrack}><View style={[styles.weekProgressFill, { width: `${Math.round((plannedSlots / 14) * 100)}%` as `${number}%` }]} /></View>
+        <View style={styles.weekStrip}>{weekDays.map((entry) => <View key={entry.iso} style={styles.weekStripDay}><Text style={styles.weekStripDow}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={styles.weekStripDate}>{entry.dayNumber}</Text><View style={styles.weekStripDots}><View style={[styles.weekStripDot, entry.meal ? styles.weekStripDotPlanned : styles.weekStripDotOpen]} /><View style={[styles.weekStripDot, entry.saskiaMeal ? styles.weekStripDotSaskia : styles.weekStripDotOpen]} /></View></View>)}</View>
       </SurfaceCard>
-      <View style={styles.weekSectionHeader}><View><Text style={styles.weekSectionTitle}>Abendessen</Text><Text style={styles.weekSectionHint}>Kommende Woche · gemeinsamer Plan</Text></View><MaterialCommunityIcons name="silverware-fork-knife" size={22} color={colors.accent} /></View>
-      <View style={styles.dayList}>{weekDays.map((entry) => { const selected = Boolean(entry.meal); return <Pressable key={entry.iso} onPress={() => openEditor(entry.day, entry.iso)} style={({ pressed }) => [styles.dayCard, { opacity: pressed ? 0.76 : 1 }]}><View style={styles.dayDateBlock}><Text style={styles.dayDateDow}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={styles.dayDateNumber}>{entry.dayNumber}</Text><Text style={styles.dayDateMonth}>{entry.monthShort}</Text></View><View style={styles.dayCardContent}><View style={styles.dayTitleRow}><Text style={styles.dayName}>{entry.day}</Text><Text style={[styles.dayStatusPill, selected ? styles.dayStatusPlanned : styles.dayStatusOpen]}>{selected ? 'Geplant' : 'Noch offen'}</Text></View><Text style={[styles.dayMeal, !selected && styles.dayMealEmpty]} numberOfLines={2}>{entry.meal || 'Noch kein Abendessen geplant'}</Text><Text style={styles.dayMeta}>{selected ? 'Tippen, um das Abendessen zu ändern' : 'Tippen und Abendessen für diesen Tag festlegen'}</Text></View><View style={[styles.dayAction, selected && styles.dayActionPlanned]}><MaterialCommunityIcons name={selected ? 'pencil-outline' : 'plus'} size={21} color={selected ? colors.accent : colors.textSecondary} /></View></Pressable>; })}</View>
+
+      <View style={styles.weekSectionHeader}><View><Text style={styles.weekSectionTitle}>Abendessen</Text><Text style={styles.weekSectionHint}>Zwei getrennte Gerichte pro Tag</Text></View><MaterialCommunityIcons name="silverware-fork-knife" size={22} color={colors.accent} /></View>
+
+      <View style={styles.dayList}>{weekDays.map((entry) => {
+        const dayPlanned = (entry.meal ? 1 : 0) + (entry.saskiaMeal ? 1 : 0);
+        return <View key={entry.iso} style={styles.dayCard}>
+          <View style={styles.dayDateBlock}><Text style={styles.dayDateDow}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={styles.dayDateNumber}>{entry.dayNumber}</Text><Text style={styles.dayDateMonth}>{entry.monthShort}</Text></View>
+          <View style={styles.dayCardContent}>
+            <View style={styles.dayTitleRow}><Text style={styles.dayName}>{entry.day}</Text><Text style={[styles.dayStatusPill, dayPlanned === 2 ? styles.dayStatusPlanned : styles.dayStatusOpen]}>{dayPlanned}/2 geplant</Text></View>
+            <View style={styles.dayMealSlots}>
+              <Pressable onPress={() => openEditor(entry.day, entry.iso, 'main')} style={({ pressed }) => [styles.dayMealSlot, { opacity: pressed ? 0.72 : 1 }]}>
+                <View style={styles.dayMealSlotHeader}><Text style={styles.dayMealSlotLabel}>ABENDESSEN</Text><MaterialCommunityIcons name={entry.meal ? 'pencil-outline' : 'plus'} size={16} color={colors.textSecondary} /></View>
+                <Text style={[styles.dayMealSlotValue, !entry.meal && styles.dayMealSlotEmpty]} numberOfLines={2}>{entry.meal || 'Noch kein Gericht geplant'}</Text>
+              </Pressable>
+              <Pressable onPress={() => openEditor(entry.day, entry.iso, 'saskia')} style={({ pressed }) => [styles.dayMealSlot, styles.dayMealSlotSaskia, { opacity: pressed ? 0.72 : 1 }]}>
+                <View style={styles.dayMealSlotHeader}><View style={styles.saskiaLabelRow}><MaterialCommunityIcons name="account-heart-outline" size={14} color={colors.accent} /><Text style={styles.dayMealSlotLabelSaskia}>FÜR SASKIA</Text></View><MaterialCommunityIcons name={entry.saskiaMeal ? 'pencil-outline' : 'plus'} size={16} color={colors.accent} /></View>
+                <Text style={[styles.dayMealSlotValue, !entry.saskiaMeal && styles.dayMealSlotEmpty]} numberOfLines={2}>{entry.saskiaMeal || 'Noch kein Gericht für Saskia'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>;
+      })}</View>
     </ScrollView>
-    <Modal transparent visible={Boolean(editingDay)} animationType="fade" presentationStyle="overFullScreen" onRequestClose={closeEditor}><KeyboardAvoidingView style={styles.modalFlex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><Pressable style={styles.modalOverlay} onPress={closeEditor} /><View style={[styles.editorSheet, { paddingBottom: Math.max(insets.bottom, 18) }]}><SheetDismissHandle onClose={closeEditor} /><Text style={styles.editorEyebrow}>ABENDESSEN PLANEN</Text><Text style={styles.editorTitle}>{editingDay}</Text><Text style={styles.fieldHint}>{editingDate ? new Date(`${editingDate}T12:00:00`).toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' }) : ''}</Text><Text style={styles.fieldLabel}>Gericht</Text><TextInput autoFocus value={mealText} onChangeText={setMealText} placeholder="z. B. Ofengemüse mit Feta" placeholderTextColor={colors.textTertiary} style={styles.largeInput} returnKeyType="done" onSubmitEditing={persist} /><ActionButton label={editingDate && meals[editingDate] ? 'Änderung speichern' : 'Abendessen einplanen'} icon="check" onPress={persist} />{editingDate && meals[editingDate] ? <ActionButton label="Aus Wochenplan entfernen" icon="calendar-remove-outline" variant="ghost" onPress={removePlan} /> : null}</View></KeyboardAvoidingView></Modal>
+
+    <Modal transparent visible={Boolean(editingDay)} animationType="fade" presentationStyle="overFullScreen" onRequestClose={closeEditor}>
+      <KeyboardAvoidingView style={styles.modalFlex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <Pressable style={styles.modalOverlay} onPress={closeEditor} />
+        <View style={[styles.editorSheet, { paddingBottom: Math.max(insets.bottom, 18) }]}>
+          <SheetDismissHandle onClose={closeEditor} />
+          <Text style={styles.editorEyebrow}>{editingSlot === 'saskia' ? 'FÜR SASKIA' : 'ABENDESSEN'}</Text>
+          <Text style={styles.editorTitle}>{editingDay}</Text>
+          <Text style={styles.fieldHint}>{editingDate ? new Date(`${editingDate}T12:00:00`).toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' }) : ''}</Text>
+          <Text style={styles.fieldLabel}>{editingSlot === 'saskia' ? 'Gericht für Saskia' : 'Gericht'}</Text>
+          <TextInput autoFocus value={mealText} onChangeText={setMealText} placeholder={editingSlot === 'saskia' ? 'z. B. Pasta für Saskia' : 'z. B. Ofengemüse mit Feta'} placeholderTextColor={colors.textTertiary} style={styles.largeInput} returnKeyType="done" onSubmitEditing={persist} />
+          <ActionButton label="Gericht speichern" icon="check" onPress={persist} />
+          {editingDate && (editingSlot === 'saskia' ? saskiaMeals[editingDate] : meals[editingDate]) ? <ActionButton label={editingSlot === 'saskia' ? 'Gericht für Saskia entfernen' : 'Abendessen entfernen'} icon="calendar-remove-outline" variant="ghost" onPress={removePlan} /> : null}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   </>;
 }
 
@@ -921,6 +992,7 @@ function MainApp() {
   const [tab, setTab] = useState<Tab>('heute');
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [meals, setMeals] = useState<Record<string, string>>({});
+  const [saskiaMeals, setSaskiaMeals] = useState<Record<string, string>>({});
   const [ownRecipes, setOwnRecipes] = useState<OwnRecipe[]>([]);
   const [history, setHistory] = useState<MealHistoryEntry[]>([]);
   const [pantryItems, setPantryItems] = useState<PantryItem[]>([]);
@@ -963,6 +1035,7 @@ function MainApp() {
     if (generation !== loadGeneration.current) return;
     setItems(shopping);
     setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
+    setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
     setPantryItems(pantry);
     syncExpiryNotifications(pantry).catch(() => undefined);
     if (startup) setStartupProgress(68);
@@ -1008,7 +1081,7 @@ function MainApp() {
     const channel = supabase.channel(`mealflow-household-${household.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => loadShopping().then(setItems).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items', filter }, () => loadPantry().then((next) => { setPantryItems(next); syncExpiryNotifications(next).catch(() => undefined); }).catch(() => undefined))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => loadMealPlan().then((plan) => setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])))).catch(() => undefined))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => loadMealPlan().then((plan) => { setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? '']))); setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? '']))); }).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter }, () => loadOwnRecipes().then(setOwnRecipes).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_history', filter }, () => loadMealHistory().then(setHistory).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'household_members', filter }, () => loadHousehold().then(setHousehold).catch(() => undefined))
@@ -1059,7 +1132,7 @@ function MainApp() {
       <StatusBar style={darkMode ? 'light' : 'dark'} />
       <View style={styles.screenArea}>
         {tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} pantryItems={pantryItems} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
-        {tab === 'woche' ? <PlanScreen household={household} meals={meals} setMeals={setMeals} onSettings={() => setSettingsOpen(true)} /> : null}
+        {tab === 'woche' ? <PlanScreen household={household} meals={meals} saskiaMeals={saskiaMeals} setMeals={setMeals} setSaskiaMeals={setSaskiaMeals} onSettings={() => setSettingsOpen(true)} /> : null}
         {tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setItems} preferences={preferences} onSettings={() => setSettingsOpen(true)} /> : null}
         {tab === 'vorrat' ? <InventoryScreen onSettings={() => setSettingsOpen(true)} hapticsEnabled={preferences.hapticsEnabled} /> : null}
       </View>
@@ -1089,8 +1162,8 @@ function createStyles() {
   authRoot: { flex: 1, backgroundColor: colors.background }, authContent: { flexGrow: 1, justifyContent: 'center', padding: 24, gap: 12 }, brandMark: { width: 58, height: 58, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', ...getShadow() }, authBrand: { ...typography.title, color: colors.accent, marginTop: 6 }, authHero: { ...typography.hero, color: colors.text, maxWidth: 380 }, authSubtitle: { ...typography.body, color: colors.textSecondary, maxWidth: 370, marginBottom: 12 }, authCard: { padding: 18, gap: 16 }, segmentedControl: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: 4 }, segmentButton: { flex: 1, minHeight: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, segmentButtonActive: { backgroundColor: colors.surface, ...getShadow() }, segmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, segmentTextActive: { color: colors.text }, inputGroup: { gap: 7 }, inputLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, inputShell: { minHeight: 52, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.md }, textInput: { flex: 1, ...typography.body, color: colors.text, paddingVertical: 12 }, authHint: { ...typography.caption, color: colors.textTertiary, textAlign: 'center' },
   homeExpiryCard: { paddingHorizontal: 14, overflow: 'hidden' }, homeExpiryRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, homeExpiryName: { ...typography.caption, color: colors.text, fontWeight: '800', flex: 1 }, homeExpiryStatus: { fontSize: 11, lineHeight: 14, color: colors.accent, fontWeight: '800' }, homeExpiryStatusDanger: { color: colors.danger },
   heroCard: { padding: 20, gap: 10 }, heroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, heroLabel: { ...typography.label, color: colors.accent, marginTop: 4 }, heroMeal: { ...typography.h2, color: colors.text }, heroMeta: { ...typography.body, color: colors.textSecondary, marginBottom: 4 }, heroActions: { flexDirection: 'row', gap: 10 }, metricsRow: { flexDirection: 'row', gap: 12 }, metricCard: { flex: 1, padding: 16, gap: 7 }, metricNumber: { fontSize: 26, lineHeight: 31, fontWeight: '800', color: colors.text }, metricLabel: { ...typography.caption, color: colors.textSecondary }, quickGrid: { gap: 10 }, quickAction: { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, ...getShadow() }, quickIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, quickTitle: { ...typography.bodyStrong, color: colors.text, minWidth: 95 }, quickText: { ...typography.caption, color: colors.textSecondary, flex: 1 },
-  weekOverviewCard: { padding: 18, gap: 14 }, weekOverviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, weekOverviewLabel: { ...typography.label, color: colors.accent }, weekOverviewTitle: { ...typography.title, color: colors.text, marginTop: 3 }, weekOverviewBadge: { minHeight: 38, paddingHorizontal: 11, borderRadius: radius.pill, backgroundColor: colors.accentSoft, flexDirection: 'row', alignItems: 'center', gap: 6 }, weekOverviewBadgeText: { ...typography.caption, color: colors.accent, fontWeight: '800' }, weekProgressTrack: { height: 8, borderRadius: 5, backgroundColor: colors.surfaceMuted, overflow: 'hidden' }, weekProgressFill: { height: '100%', borderRadius: 5, backgroundColor: colors.accent }, weekStrip: { flexDirection: 'row', gap: 5 }, weekStripDay: { flex: 1, minHeight: 68, borderRadius: 15, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', gap: 3, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent' }, weekStripDayToday: { backgroundColor: colors.accentSoft, borderColor: '#AFC8B6' }, weekStripDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, weekStripDowToday: { color: colors.accent }, weekStripDate: { fontSize: 17, lineHeight: 20, fontWeight: '800', color: colors.text }, weekStripDateToday: { color: colors.accent }, weekStripDot: { width: 6, height: 6, borderRadius: 3 }, weekStripDotPlanned: { backgroundColor: colors.accent }, weekStripDotOpen: { backgroundColor: colors.border }, weekSectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2 }, weekSectionTitle: { ...typography.title, color: colors.text }, weekSectionHint: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  dayList: { gap: 12 }, dayCard: { minHeight: 112, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, ...getShadow() }, dayCardToday: { borderColor: '#AFC8B6', backgroundColor: colors.surface }, dayDateBlock: { width: 58, height: 76, borderRadius: 18, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayDateBlockToday: { backgroundColor: colors.accent }, dayDateDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, dayDateDowToday: { color: '#DCEADF' }, dayDateNumber: { fontSize: 24, lineHeight: 28, fontWeight: '800', color: colors.text }, dayDateNumberToday: { color: '#FFFFFF' }, dayDateMonth: { fontSize: 10, lineHeight: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }, dayDateMonthToday: { color: '#DCEADF' }, dayCardContent: { flex: 1, gap: 5 }, dayTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }, dayName: { ...typography.caption, color: colors.textSecondary, fontWeight: '800' }, todayPill: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, overflow: 'hidden', fontWeight: '800' }, dayStatusPill: { fontSize: 10, lineHeight: 12, fontWeight: '800', paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.pill, overflow: 'hidden' }, dayStatusPlanned: { color: colors.accent, backgroundColor: colors.accentSoft }, dayStatusOpen: { color: colors.textTertiary, backgroundColor: colors.surfaceMuted }, dayMeal: { fontSize: 19, lineHeight: 24, fontWeight: '800', color: colors.text }, dayMealEmpty: { color: colors.textTertiary, fontWeight: '700' }, dayMeta: { ...typography.caption, color: colors.textSecondary }, dayAction: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayActionPlanned: { backgroundColor: colors.accentSoft },
+  weekOverviewCard: { padding: 18, gap: 14 }, weekOverviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, weekOverviewLabel: { ...typography.label, color: colors.accent }, weekOverviewTitle: { ...typography.title, color: colors.text, marginTop: 3 }, weekOverviewBadge: { minHeight: 38, paddingHorizontal: 11, borderRadius: radius.pill, backgroundColor: colors.accentSoft, flexDirection: 'row', alignItems: 'center', gap: 6 }, weekOverviewBadgeText: { ...typography.caption, color: colors.accent, fontWeight: '800' }, weekProgressTrack: { height: 8, borderRadius: 5, backgroundColor: colors.surfaceMuted, overflow: 'hidden' }, weekProgressFill: { height: '100%', borderRadius: 5, backgroundColor: colors.accent }, weekStrip: { flexDirection: 'row', gap: 5 }, weekStripDay: { flex: 1, minHeight: 68, borderRadius: 15, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', gap: 3, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent' }, weekStripDayToday: { backgroundColor: colors.accentSoft, borderColor: '#AFC8B6' }, weekStripDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, weekStripDowToday: { color: colors.accent }, weekStripDate: { fontSize: 17, lineHeight: 20, fontWeight: '800', color: colors.text }, weekStripDateToday: { color: colors.accent }, weekStripDot: { width: 6, height: 6, borderRadius: 3 }, weekStripDotPlanned: { backgroundColor: colors.accent }, weekStripDotOpen: { backgroundColor: colors.border }, weekStripDots: { flexDirection: 'row', gap: 3 }, weekStripDotSaskia: { backgroundColor: colors.accent, borderWidth: 1, borderColor: colors.surface }, weekSectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2 }, weekSectionTitle: { ...typography.title, color: colors.text }, weekSectionHint: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  dayList: { gap: 12 }, dayCard: { minHeight: 174, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, ...getShadow() }, dayCardToday: { borderColor: '#AFC8B6', backgroundColor: colors.surface }, dayDateBlock: { width: 58, height: 76, borderRadius: 18, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayDateBlockToday: { backgroundColor: colors.accent }, dayDateDow: { fontSize: 10, lineHeight: 12, fontWeight: '800', color: colors.textTertiary }, dayDateDowToday: { color: '#DCEADF' }, dayDateNumber: { fontSize: 24, lineHeight: 28, fontWeight: '800', color: colors.text }, dayDateNumberToday: { color: '#FFFFFF' }, dayDateMonth: { fontSize: 10, lineHeight: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }, dayDateMonthToday: { color: '#DCEADF' }, dayCardContent: { flex: 1, gap: 5 }, dayTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }, dayName: { ...typography.caption, color: colors.textSecondary, fontWeight: '800' }, todayPill: { ...typography.caption, color: colors.accent, backgroundColor: colors.accentSoft, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, overflow: 'hidden', fontWeight: '800' }, dayStatusPill: { fontSize: 10, lineHeight: 12, fontWeight: '800', paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.pill, overflow: 'hidden' }, dayStatusPlanned: { color: colors.accent, backgroundColor: colors.accentSoft }, dayStatusOpen: { color: colors.textTertiary, backgroundColor: colors.surfaceMuted }, dayMeal: { fontSize: 19, lineHeight: 24, fontWeight: '800', color: colors.text }, dayMealEmpty: { color: colors.textTertiary, fontWeight: '700' }, dayMeta: { ...typography.caption, color: colors.textSecondary }, dayAction: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, dayActionPlanned: { backgroundColor: colors.accentSoft }, dayMealSlots: { gap: 7 }, dayMealSlot: { minHeight: 58, borderRadius: 13, paddingHorizontal: 11, paddingVertical: 8, backgroundColor: colors.surfaceMuted, gap: 3 }, dayMealSlotSaskia: { backgroundColor: colors.accentSoft, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, dayMealSlotHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, dayMealSlotLabel: { fontSize: 9, lineHeight: 11, fontWeight: '900', letterSpacing: 0.7, color: colors.textTertiary }, dayMealSlotLabelSaskia: { fontSize: 9, lineHeight: 11, fontWeight: '900', letterSpacing: 0.7, color: colors.accent }, saskiaLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 }, dayMealSlotValue: { fontSize: 15, lineHeight: 19, fontWeight: '800', color: colors.text }, dayMealSlotEmpty: { color: colors.textTertiary, fontWeight: '700' },
   modalOverlay: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay }, bottomSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 26, position: 'absolute', left: 0, right: 0, bottom: 0 }, settingsSheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 12 }, editorSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, gap: 12 }, dayPickerSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 12 }, filterSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: 18, paddingBottom: 30, position: 'absolute', left: 0, right: 0, bottom: 0, gap: 16 }, sheetDismissZone: { minHeight: 28, alignItems: 'center', justifyContent: 'center', marginTop: 1 }, sheetHandle: { width: 38, height: 5, borderRadius: 3, backgroundColor: colors.border, alignSelf: 'center' }, sheetHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, sheetCancel: { ...typography.body, color: colors.textSecondary }, sheetTitle: { ...typography.title, color: colors.text }, sheetDone: { ...typography.bodyStrong, color: colors.accent }, pickerRow: { flexDirection: 'row', minHeight: 210 }, picker: { flex: 1 }, pickerItem: { color: colors.text, fontSize: 19 },
   settingsCard: { padding: 15, flexDirection: 'row', alignItems: 'center', gap: 12 }, settingsIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, settingsLabel: { ...typography.caption, color: colors.textSecondary }, settingsValue: { ...typography.bodyStrong, color: colors.text, marginTop: 2 }, settingsMeta: { ...typography.caption, color: colors.textTertiary, marginTop: 4 }, editorEyebrow: { ...typography.label, color: colors.accent }, editorTitle: { ...typography.h2, color: colors.text, marginBottom: 2 }, fieldLabel: { ...typography.bodyStrong, color: colors.text }, fieldHint: { ...typography.caption, color: colors.textSecondary }, largeInput: { minHeight: 54, borderRadius: radius.md, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 14, ...typography.body, color: colors.text },
   householdHero: { padding: 18, flexDirection: 'row', gap: 14, alignItems: 'center' }, householdIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, householdHeroLabel: { ...typography.label, color: colors.accent }, householdHeroTitle: { ...typography.h2, color: colors.text, marginTop: 2 }, householdHeroMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 4 }, memberRow: { minHeight: 66, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, avatar: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }, avatarText: { ...typography.bodyStrong, color: colors.accent }, memberName: { ...typography.bodyStrong, color: colors.text }, memberMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 }, memberPermissionBlock: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, memberInvitePermissionRow: { minHeight: 68, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surfaceMuted }, inviteCodeCard: { padding: 18, gap: 10 }, inviteCode: { fontSize: 30, letterSpacing: 4, fontWeight: '800', color: colors.text }, inviteCard: { padding: 14, flexDirection: 'row', gap: 10, alignItems: 'center' }, smallAction: { minWidth: 102 }, settingsBlock: { padding: 16, gap: 13 }, codeInput: { letterSpacing: 2, fontWeight: '700' },

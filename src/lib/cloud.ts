@@ -40,7 +40,7 @@ export type ShoppingItem = {
   addedByName?: string | null;
 };
 
-export type MealDay = { plannedDate: string; day: string; meal: string | null };
+export type MealDay = { plannedDate: string; day: string; meal: string | null; mealSaskia: string | null };
 
 export type OwnRecipe = {
   id: string;
@@ -72,7 +72,7 @@ type ShoppingRow = {
   completed_at?: string | null;
 };
 
-type MealRow = { planned_date: string; meal: string | null };
+type MealRow = { planned_date: string; meal: string | null; meal_saskia: string | null };
 
 type RecipeRow = {
   id: string;
@@ -326,7 +326,7 @@ export async function loadMealPlan(): Promise<MealDay[]> {
   const toIso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const { data, error } = await supabase
     .from('meal_plan_entries')
-    .select('planned_date,meal')
+    .select('planned_date,meal,meal_saskia')
     .eq('household_id', householdId)
     .gte('planned_date', toIso(from))
     .lte('planned_date', toIso(until))
@@ -336,7 +336,7 @@ export async function loadMealPlan(): Promise<MealDay[]> {
     const plannedDate = String(row.planned_date);
     const date = new Date(`${plannedDate}T12:00:00`);
     const rawDay = date.toLocaleDateString('de-AT', { weekday: 'long' });
-    return { plannedDate, day: rawDay.charAt(0).toUpperCase() + rawDay.slice(1), meal: row.meal == null ? null : String(row.meal) };
+    return { plannedDate, day: rawDay.charAt(0).toUpperCase() + rawDay.slice(1), meal: row.meal == null ? null : String(row.meal), mealSaskia: row.meal_saskia == null ? null : String(row.meal_saskia) };
   });
 }
 
@@ -345,13 +345,29 @@ export async function saveMeal(plannedDate: string, meal: string | null) {
   const user = await requireUser();
   const clean = meal?.trim() || null;
   if (!clean) {
-    const { error } = await requireCloud().from('meal_plan_entries').delete().eq('household_id', householdId).eq('planned_date', plannedDate);
+    const { error } = await requireCloud().from('meal_plan_entries').update({ meal: null }).eq('household_id', householdId).eq('planned_date', plannedDate);
     if (error) throw error;
     return;
   }
   const { error } = await requireCloud()
     .from('meal_plan_entries')
     .upsert({ household_id: householdId, owner_id: user.id, planned_date: plannedDate, meal: clean }, { onConflict: 'household_id,planned_date' });
+  if (error) throw error;
+}
+
+
+export async function saveSaskiaMeal(plannedDate: string, meal: string | null) {
+  const householdId = await getActiveHouseholdId();
+  const user = await requireUser();
+  const clean = meal?.trim() || null;
+  if (!clean) {
+    const { error } = await requireCloud().from('meal_plan_entries').update({ meal_saskia: null }).eq('household_id', householdId).eq('planned_date', plannedDate);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await requireCloud()
+    .from('meal_plan_entries')
+    .upsert({ household_id: householdId, owner_id: user.id, planned_date: plannedDate, meal: null, meal_saskia: clean }, { onConflict: 'household_id,planned_date' });
   if (error) throw error;
 }
 
