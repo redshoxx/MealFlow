@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/apply-2.2.9.cjs'
+      - 'src/screens/BudgetScreen.tsx'
 
 permissions:
   contents: write
