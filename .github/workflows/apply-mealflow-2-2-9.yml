@@ -44,6 +44,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add App.tsx src/lib/preferences.ts app.json package.json README.md CHANGELOG.md
+          git add App.tsx src/lib/preferences.ts app.json package.json README.md CHANGELOG.md src/screens/BudgetScreen.tsx
           git commit -m "feat: MealFlow 2.2.9 budget replaces pantry"
           git push origin main
