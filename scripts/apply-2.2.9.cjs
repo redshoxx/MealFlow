@@ -139,4 +139,13 @@ if (!readme.includes('## Neu in 2.2.9')) {
 readme = readme.replace('- **Vorrat** –', '- **Budget** – Kostenschätzung der Einkaufsliste, Produktpreise und Monatsbudget\n- **Vorrat (entfernt)** –');
 write('README.md', readme);
 
+let budgetScreen = read('src/screens/BudgetScreen.tsx');
+budgetScreen = replaceRequired(
+  budgetScreen,
+  "      <SurfaceCard style={[styles.budgetHero, status === 'warning' && styles.budgetHeroWarning, status === 'danger' && styles.budgetHeroDanger]}>",
+  "      <SurfaceCard style={{ ...styles.budgetHero, ...(status === 'warning' ? styles.budgetHeroWarning : {}), ...(status === 'danger' ? styles.budgetHeroDanger : {}) }}>",
+  'budget hero style',
+);
+write('src/screens/BudgetScreen.tsx', budgetScreen);
+
 console.log('MealFlow 2.2.9 source patch applied.');
