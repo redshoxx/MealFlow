@@ -1,5 +1,15 @@
 # MealFlow Changelog
 
+## 2.2.6 Hotfix Build 19
+
+- Endlos-Ladefehler behoben: ein fehlgeschlagener Haushalts-Start kann die App nicht mehr dauerhaft im Loader festhalten.
+- Startabfragen besitzen jetzt Zeitlimits und eine Fehleransicht mit „Erneut laden“.
+- Haushalt, Einkauf, Wochenplan und Vorrat bilden den schnellen Kernstart; Rezepte, Verlauf und Einladungen laden danach im Hintergrund.
+- Einzelne langsame Nebendaten blockieren den App-Start nicht mehr.
+- Anmeldung besitzt ebenfalls ein Zeitlimit statt eines möglichen unendlichen Prüfstatus.
+- Performance des Startvorgangs verbessert und unnötige feste Wartezeit reduziert.
+- Sichtbare Version bleibt 2.2.6; iOS Build 19, Android Version Code 19.
+
 ## 2.2.6
 
 - Einkaufsliste: Produkt-Hinzufügen ist jetzt ein einzelner schwebender Plus-Button unten rechts.

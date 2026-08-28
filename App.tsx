@@ -95,6 +95,16 @@ function germanError(message?: string) {
   return message;
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`${label} dauert zu lange. Bitte prüfe deine Verbindung.`)), timeoutMs);
+    promise.then(
+      (value) => { clearTimeout(timeout); resolve(value); },
+      (error) => { clearTimeout(timeout); reject(error); },
+    );
+  });
+}
+
 function formatAmount(value: number) {
   return String(value).replace('.5', ',5');
 }
@@ -216,6 +226,10 @@ function SheetDismissHandle({ onClose }: { onClose: () => void }) {
 function LoadingScreen({ message = 'MealFlow wird vorbereitet …', progress = 0 }: { message?: string; progress?: number }) {
   const safeProgress = Math.max(0, Math.min(100, Math.round(progress)));
   return <View style={styles.loadingScreen}><View style={styles.loadingLogo}><MaterialCommunityIcons name="silverware-fork-knife" size={30} color="#FFFFFF" /></View><Text style={styles.loadingBrand}>MealFlow</Text><Text style={styles.loadingMessage}>{message}</Text><View style={styles.loadingProgress}><View style={[styles.loadingProgressFill, { width: `${safeProgress}%` as `${number}%` }]} /></View><Text style={styles.loadingPercent}>{safeProgress}%</Text><Text style={styles.loadingHint}>Haushalt · Einkauf · Woche · Vorrat</Text></View>;
+}
+
+function StartupErrorScreen({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return <View style={styles.loadingScreen}><View style={styles.loadingLogo}><MaterialCommunityIcons name="cloud-alert-outline" size={30} color="#FFFFFF" /></View><Text style={styles.loadingBrand}>MealFlow</Text><Text style={styles.configurationTitle}>Start konnte nicht abgeschlossen werden</Text><Text style={styles.configurationText}>{message}</Text><ActionButton label="Erneut laden" icon="refresh" onPress={onRetry} style={{ minWidth: 190 }} /><Text style={styles.loadingHint}>Die App bleibt nicht mehr im Ladebildschirm hängen.</Text></View>;
 }
 
 function RecipeArtwork({ recipe, variant }: { recipe: Recipe; variant: 'card' | 'detail' }) {
@@ -1026,6 +1040,7 @@ function MainApp() {
   const [invitations, setInvitations] = useState<HouseholdInvitation[]>([]);
   const [ready, setReady] = useState(false);
   const [startupProgress, setStartupProgress] = useState(0);
+  const [startupError, setStartupError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [householdOpen, setHouseholdOpen] = useState(false);
   const [email, setEmail] = useState('');
@@ -1047,42 +1062,89 @@ function MainApp() {
     savePreferences(next).catch(() => undefined);
   };
 
+  const loadSecondaryData = async (generation: number) => {
+    const [recipesResult, historyResult, invitesResult, userResult] = await Promise.allSettled([
+      withTimeout(loadOwnRecipes(), 8000, 'Rezepte'),
+      withTimeout(loadMealHistory(), 8000, 'Verlauf'),
+      withTimeout(loadPendingHouseholdInvitations(), 8000, 'Einladungen'),
+      withTimeout(supabase.auth.getUser(), 8000, 'Benutzerprofil'),
+    ]);
+    if (generation !== loadGeneration.current) return;
+    if (recipesResult.status === 'fulfilled') setOwnRecipes(recipesResult.value);
+    if (historyResult.status === 'fulfilled') setHistory(historyResult.value);
+    if (invitesResult.status === 'fulfilled') setInvitations(invitesResult.value);
+    if (userResult.status === 'fulfilled') setEmail(userResult.value.data.user?.email ?? '');
+  };
+
   const reloadAll = async (startup = false) => {
     const startedAt = Date.now();
     const generation = ++loadGeneration.current;
-    if (startup) setStartupProgress(0);
+    if (startup) {
+      setStartupError(null);
+      setReady(false);
+      setStartupProgress(0);
+    }
     clearHouseholdCache();
-    if (startup) setStartupProgress(12);
-    const nextHousehold = await loadHousehold();
+    if (startup) setStartupProgress(10);
+
+    const nextHousehold = await withTimeout(loadHousehold(), 10000, 'Haushalt');
     if (generation !== loadGeneration.current) return;
     setHousehold(nextHousehold);
-    if (startup) setStartupProgress(30);
-    const [shopping, plan, pantry] = await Promise.all([loadShopping(), loadMealPlan(), loadPantry()]);
+    if (startup) setStartupProgress(32);
+
+    const [shoppingResult, planResult, pantryResult] = await Promise.allSettled([
+      withTimeout(loadShopping(), 9000, 'Einkaufsliste'),
+      withTimeout(loadMealPlan(), 9000, 'Wochenplan'),
+      withTimeout(loadPantry(), 9000, 'Vorrat'),
+    ]);
     if (generation !== loadGeneration.current) return;
-    setItems(shopping);
-    setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
-    setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
-    setPantryItems(pantry);
-    syncExpiryNotifications(pantry).catch(() => undefined);
-    if (startup) setStartupProgress(68);
-    const [customRecipes, cookedHistory, pending, userResult] = await Promise.all([loadOwnRecipes(), loadMealHistory(), loadPendingHouseholdInvitations(), supabase.auth.getUser()]);
-    if (generation !== loadGeneration.current) return;
-    setOwnRecipes(customRecipes); setHistory(cookedHistory); setInvitations(pending); setEmail(userResult.data.user?.email ?? '');
+
+    if (shoppingResult.status === 'fulfilled') setItems(shoppingResult.value);
+    if (planResult.status === 'fulfilled') {
+      const plan = planResult.value;
+      setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
+      setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
+    }
+    if (pantryResult.status === 'fulfilled') {
+      setPantryItems(pantryResult.value);
+      syncExpiryNotifications(pantryResult.value).catch(() => undefined);
+    }
+
     if (startup) {
-      setStartupProgress(92);
-      const remaining = 1350 - (Date.now() - startedAt);
-      if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+      setStartupProgress(78);
+      const minimumVisible = 650 - (Date.now() - startedAt);
+      if (minimumVisible > 0) await new Promise((resolve) => setTimeout(resolve, minimumVisible));
       if (generation !== loadGeneration.current) return;
       setStartupProgress(100);
-      await new Promise((resolve) => setTimeout(resolve, 220));
+      setReady(true);
+      void loadSecondaryData(generation);
+
+      const failedCore = [shoppingResult, planResult, pantryResult].filter((result) => result.status === 'rejected').length;
+      if (failedCore > 0) {
+        setTimeout(() => Alert.alert('Teilweise geladen', 'MealFlow ist gestartet. Einige Daten konnten noch nicht geladen werden und werden beim nächsten Aktualisieren erneut versucht.'), 250);
+      }
+      return;
     }
+
+    await loadSecondaryData(generation);
+    if (generation !== loadGeneration.current) return;
     setReady(true);
   };
 
-  useEffect(() => {
+  const startApplication = () => {
+    setStartupError(null);
     setStartupProgress(0);
+    void reloadAll(true).catch((error: any) => {
+      if (loadGeneration.current < 1) return;
+      setStartupProgress(100);
+      setReady(false);
+      setStartupError(germanError(error?.message));
+    });
+  };
+
+  useEffect(() => {
     loadPreferences().then((loaded) => { setPreferences(loaded); setTab(loaded.startTab); applyAppearance(loaded.themeMode, loaded.cozyMode); }).catch(() => undefined);
-    reloadAll(true).catch((error) => { setStartupProgress(100); setReady(true); Alert.alert('Daten konnten nicht geladen werden', germanError(error?.message)); });
+    startApplication();
   }, []);
 
   useEffect(() => {
@@ -1151,6 +1213,7 @@ function MainApp() {
     }
   };
 
+  if (startupError && !household) return <StartupErrorScreen message={startupError} onRetry={startApplication} />;
   if (!ready || !household) return <LoadingScreen message="Deine Daten werden sicher geladen …" progress={startupProgress} />;
 
   return (
@@ -1173,9 +1236,28 @@ function MainApp() {
 
 
 function Root() {
-  const [authenticated, setAuthenticated] = useState(false); const [checking, setChecking] = useState(true);
-  useEffect(() => { if (!isCloudConfigured) { setChecking(false); return; } supabase.auth.getSession().then(({ data }) => { setAuthenticated(Boolean(data.session)); setChecking(false); }); const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { if (!session) clearHouseholdCache(); setAuthenticated(Boolean(session)); }); return () => listener.subscription.unsubscribe(); }, []);
-  if (checking) return <LoadingScreen message="Anmeldung wird geprüft …" progress={5} />;
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checking, setChecking] = useState(true);
+  useEffect(() => {
+    let active = true;
+    if (!isCloudConfigured) { setChecking(false); return; }
+    withTimeout(supabase.auth.getSession(), 7000, 'Anmeldung').then(({ data }) => {
+      if (!active) return;
+      setAuthenticated(Boolean(data.session));
+      setChecking(false);
+    }).catch(() => {
+      if (!active) return;
+      setAuthenticated(false);
+      setChecking(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) clearHouseholdCache();
+      setAuthenticated(Boolean(session));
+      setChecking(false);
+    });
+    return () => { active = false; listener.subscription.unsubscribe(); };
+  }, []);
+  if (checking) return <LoadingScreen message="Anmeldung wird geprüft …" progress={8} />;
   if (!isCloudConfigured) return <View style={styles.loadingScreen}><Text style={styles.configurationTitle}>Cloud-Verbindung fehlt</Text><Text style={styles.configurationText}>MealFlow benötigt die Supabase-Konfiguration, damit dein Haushalt sicher synchronisiert werden kann.</Text></View>;
   return authenticated ? <MainApp /> : <AuthScreen />;
 }
