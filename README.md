@@ -1,6 +1,16 @@
-# MealFlow 2.1
+# MealFlow 2.2.9
 
 MealFlow ist eine deutschsprachige iPhone-/Android-App für gemeinsame Abendessenplanung, Einkauf und Rezepte. Die App ist auf iPhone 12 optimiert, nutzt Supabase für Auth/PostgreSQL/Realtime und wird als SideStore-IPA sowie signierte Android-APK gebaut.
+
+## Neu in 2.2.9
+
+### Budget statt Vorrat
+- eigener Hauptbereich **Budget** anstelle des bisherigen Vorrats
+- Kostenschätzung für die aktuell offene Einkaufsliste
+- haushaltsweit speicherbare Produktpreise mit Einheiten
+- Monatsbudget mit grün/orange/roter Budget-Ampel
+- Anzeige von geschätzt ausgegeben, geplant und verbleibendem Budget
+- lokaler Fallback, falls die neue Budget-Migration noch nicht auf Supabase eingespielt wurde
 
 ## Neu in 2.1
 

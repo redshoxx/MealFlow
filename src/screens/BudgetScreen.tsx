@@ -190,7 +190,7 @@ export function BudgetScreen({
         action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />}
       />
 
-      <SurfaceCard style={[styles.budgetHero, status === 'warning' && styles.budgetHeroWarning, status === 'danger' && styles.budgetHeroDanger]}>
+      <SurfaceCard style={{ ...styles.budgetHero, ...(status === 'warning' ? styles.budgetHeroWarning : {}), ...(status === 'danger' ? styles.budgetHeroDanger : {}) }}>
         <View style={styles.heroTop}>
           <View style={[styles.statusIcon, status === 'warning' && styles.statusIconWarning, status === 'danger' && styles.statusIconDanger]}>
             <MaterialCommunityIcons name={statusIcon} size={24} color={status === 'danger' ? colors.danger : status === 'warning' ? '#A76500' : colors.accent} />

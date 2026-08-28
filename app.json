@@ -2,21 +2,21 @@
   "expo": {
     "name": "MealFlow",
     "slug": "mealflow",
-    "version": "2.2.8",
+    "version": "2.2.9",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "at.mealflow.app",
-      "buildNumber": "21"
+      "buildNumber": "22"
     },
     "android": {
       "package": "at.mealflow.app",
       "adaptiveIcon": {
         "backgroundColor": "#214F33"
       },
-      "versionCode": 21,
+      "versionCode": 22,
       "permissions": [
         "REQUEST_INSTALL_PACKAGES"
       ]
@@ -26,7 +26,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "MealFlow benötigt die Kamera, um Barcodes für Einkauf und Vorrat zu scannen.",
+          "cameraPermission": "MealFlow benötigt die Kamera für unterstützte Barcode-Funktionen.",
           "barcodeScannerEnabled": true,
           "recordAudioAndroid": false
         }

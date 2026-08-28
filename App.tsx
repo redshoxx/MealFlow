@@ -61,9 +61,7 @@ import { isCloudConfigured, supabase } from './src/lib/supabase';
 import { ActionButton, EmptyState, IconButton, refreshUiComponentStyles, ScreenHeader, SectionTitle, SurfaceCard } from './src/ui/components';
 import { colors, getShadow, radius, setThemePalette, spacing, typography } from './src/ui/theme';
 import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';
-import { InventoryScreen, refreshInventoryStyles } from './src/screens/InventoryScreen';
-import { loadPantry, type PantryItem } from './src/lib/inventory';
-import { getUrgentPantry, syncExpiryNotifications } from './src/lib/expiryNotifications';
+import { BudgetScreen, refreshBudgetStyles } from './src/screens/BudgetScreen';
 import { checkAndPromptAndroidUpdate } from './src/lib/androidUpdater';
 import appConfig from './app.json';
 
@@ -226,7 +224,7 @@ function SheetDismissHandle({ onClose }: { onClose: () => void }) {
 
 function LoadingScreen({ message = 'MealFlow wird vorbereitet …', progress = 0 }: { message?: string; progress?: number }) {
   const safeProgress = Math.max(0, Math.min(100, Math.round(progress)));
-  return <View style={styles.loadingScreen}><View style={styles.loadingLogo}><MaterialCommunityIcons name="silverware-fork-knife" size={30} color="#FFFFFF" /></View><Text style={styles.loadingBrand}>MealFlow</Text><Text style={styles.loadingMessage}>{message}</Text><View style={styles.loadingProgress}><View style={[styles.loadingProgressFill, { width: `${safeProgress}%` as `${number}%` }]} /></View><Text style={styles.loadingPercent}>{safeProgress}%</Text><Text style={styles.loadingHint}>Haushalt · Einkauf · Woche · Vorrat</Text></View>;
+  return <View style={styles.loadingScreen}><View style={styles.loadingLogo}><MaterialCommunityIcons name="silverware-fork-knife" size={30} color="#FFFFFF" /></View><Text style={styles.loadingBrand}>MealFlow</Text><Text style={styles.loadingMessage}>{message}</Text><View style={styles.loadingProgress}><View style={[styles.loadingProgressFill, { width: `${safeProgress}%` as `${number}%` }]} /></View><Text style={styles.loadingPercent}>{safeProgress}%</Text><Text style={styles.loadingHint}>Haushalt · Einkauf · Woche · Budget</Text></View>;
 }
 
 function StartupErrorScreen({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -513,7 +511,7 @@ function SettingsSheet({
     { key: 'heute', label: 'Heute' },
     { key: 'woche', label: 'Woche' },
     { key: 'einkauf', label: 'Einkauf' },
-    { key: 'vorrat', label: 'Vorrat' },
+    { key: 'budget', label: 'Budget' },
   ];
 
   return (
@@ -561,19 +559,17 @@ function SettingsSheet({
 
 
 
-function HomeScreen({ household, meals, items, history, pantryItems, onNavigate, onSettings, onCooked }: { household: Household; meals: Record<string, string>; items: ShoppingItem[]; history: MealHistoryEntry[]; pantryItems: PantryItem[]; onNavigate: (tab: Tab) => void; onSettings: () => void; onCooked: (title: string) => Promise<void> }) {
+function HomeScreen({ household, meals, items, history, onNavigate, onSettings, onCooked }: { household: Household; meals: Record<string, string>; items: ShoppingItem[]; history: MealHistoryEntry[]; onNavigate: (tab: Tab) => void; onSettings: () => void; onCooked: (title: string) => Promise<void> }) {
   const tonight = meals[todayIso()] || '';
   const planned = getWeekDays(1).filter((entry) => Boolean(meals[entry.iso])).length;
   const openItems = items.filter((item) => !item.done).length;
   const cookedToday = tonight ? history.some((entry) => entry.cookedOn === todayIso() && normalizeTitle(entry.recipeTitle) === normalizeTitle(tonight)) : false;
   const dateLabel = new Date().toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' });
-  const expiring = getUrgentPantry(pantryItems, 3).slice(0, 3);
   return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
     <ScreenHeader eyebrow={`${dateLabel} · ${household.name}`} title="Heute" subtitle={`Gemeinsam mit ${household.members.length} ${household.members.length === 1 ? 'Person' : 'Personen'} planen.`} action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
     <SurfaceCard style={styles.heroCard}><View style={styles.heroIcon}><MaterialCommunityIcons name="silverware-fork-knife" size={25} color={colors.accent} /></View><Text style={styles.heroLabel}>HEUTE ABEND</Text><Text style={styles.heroMeal}>{tonight || 'Noch nichts geplant'}</Text><Text style={styles.heroMeta}>{tonight ? cookedToday ? 'Als gekocht markiert – der Haushalt ist auf dem gleichen Stand.' : 'Dein Abendessen ist im gemeinsamen Wochenplan.' : 'Plane jetzt ein Abendessen für den Haushalt.'}</Text><View style={styles.heroActions}><ActionButton label={tonight ? 'Wochenplan öffnen' : 'Abendessen planen'} icon="calendar-week-outline" onPress={() => onNavigate('woche')} variant="secondary" style={styles.flexButton} />{tonight && !cookedToday ? <ActionButton label="Gekocht" icon="check-circle-outline" onPress={() => onCooked(tonight)} style={styles.flexButton} /> : null}</View></SurfaceCard>
     <View style={styles.metricsRow}><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="calendar-check-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{planned}/7</Text><Text style={styles.metricLabel}>nächste Woche geplant</Text></SurfaceCard><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="cart-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{openItems}</Text><Text style={styles.metricLabel}>offene Einkäufe</Text></SurfaceCard></View>
-    {expiring.length ? <><SectionTitle title="Bald aufbrauchen" /><SurfaceCard style={styles.homeExpiryCard}>{expiring.map(({ item, info }) => <Pressable key={item.id} onPress={() => onNavigate('vorrat')} style={styles.homeExpiryRow}><MaterialCommunityIcons name={info.tone === 'today' || info.tone === 'expired' ? 'alert-circle' : 'clock-alert-outline'} size={19} color={info.tone === 'today' || info.tone === 'expired' ? colors.danger : colors.accent} /><Text style={styles.homeExpiryName} numberOfLines={1}>{item.productName}</Text><Text style={[styles.homeExpiryStatus, (info.tone === 'today' || info.tone === 'expired') && styles.homeExpiryStatusDanger]}>{info.label}</Text></Pressable>)}</SurfaceCard></> : null}
-    <SectionTitle title="Schnellzugriff" /><View style={styles.quickGrid}><Pressable style={styles.quickAction} onPress={() => onNavigate('woche')}><View style={styles.quickIcon}><MaterialCommunityIcons name="calendar-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Woche planen</Text><Text style={styles.quickText}>Abendessen gemeinsam festlegen.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Einkauf ergänzen</Text><Text style={styles.quickText}>Jeder im Haushalt sieht Änderungen sofort.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('vorrat')}><View style={styles.quickIcon}><MaterialCommunityIcons name="archive-outline" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Vorrat</Text><Text style={styles.quickText}>Gekaufte Produkte scannen, Mengen und MHD verwalten.</Text></Pressable></View>
+    <SectionTitle title="Schnellzugriff" /><View style={styles.quickGrid}><Pressable style={styles.quickAction} onPress={() => onNavigate('woche')}><View style={styles.quickIcon}><MaterialCommunityIcons name="calendar-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Woche planen</Text><Text style={styles.quickText}>Abendessen gemeinsam festlegen.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Einkauf ergänzen</Text><Text style={styles.quickText}>Jeder im Haushalt sieht Änderungen sofort.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('budget')}><View style={styles.quickIcon}><MaterialCommunityIcons name="wallet-outline" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Budget</Text><Text style={styles.quickText}>Einkauf schätzen und Monatsbudget prüfen.</Text></Pressable></View>
   </ScrollView>;
 }
 
@@ -1060,7 +1056,7 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
     { key: 'heute', label: 'Heute', icon: 'home-variant-outline', active: 'home-variant' },
     { key: 'woche', label: 'Woche', icon: 'calendar-week-outline', active: 'calendar-week' },
     { key: 'einkauf', label: 'Einkauf', icon: 'cart-outline', active: 'cart' },
-    { key: 'vorrat', label: 'Vorrat', icon: 'archive-outline', active: 'archive' },
+    { key: 'budget', label: 'Budget', icon: 'wallet-outline', active: 'wallet' },
   ];
   return <View style={styles.tabBar}>{tabs.map((item) => { const active = tab === item.key; return <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => onChange(item.key)} style={styles.tabItem}><MaterialCommunityIcons name={active ? item.active : item.icon} size={23} color={active ? colors.accent : colors.textTertiary} /><Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{item.label}</Text></Pressable>; })}</View>;
 }
@@ -1073,7 +1069,6 @@ function MainApp() {
   const [saskiaMeals, setSaskiaMeals] = useState<Record<string, string>>({});
   const [ownRecipes, setOwnRecipes] = useState<OwnRecipe[]>([]);
   const [history, setHistory] = useState<MealHistoryEntry[]>([]);
-  const [pantryItems, setPantryItems] = useState<PantryItem[]>([]);
   const [household, setHousehold] = useState<Household | null>(null);
   const [invitations, setInvitations] = useState<HouseholdInvitation[]>([]);
   const [ready, setReady] = useState(false);
@@ -1131,10 +1126,9 @@ function MainApp() {
     setHousehold(nextHousehold);
     if (startup) setStartupProgress(32);
 
-    const [shoppingResult, planResult, pantryResult] = await Promise.allSettled([
+    const [shoppingResult, planResult] = await Promise.allSettled([
       withTimeout(loadShopping(), 6500, 'Einkaufsliste'),
       withTimeout(loadMealPlan(), 6500, 'Wochenplan'),
-      withTimeout(loadPantry(), 6500, 'Vorrat'),
     ]);
     if (generation !== loadGeneration.current) return;
 
@@ -1154,11 +1148,6 @@ function MainApp() {
       setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
       setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
     }
-    if (pantryResult.status === 'fulfilled') {
-      setPantryItems(pantryResult.value);
-      syncExpiryNotifications(pantryResult.value).catch(() => undefined);
-    }
-
     if (startup) {
       setStartupProgress(78);
       const minimumVisible = 650 - (Date.now() - startedAt);
@@ -1168,7 +1157,7 @@ function MainApp() {
       setReady(true);
       void loadSecondaryData(generation);
 
-      const failedCore = [shoppingResult, planResult, pantryResult].filter((result) => result.status === 'rejected').length;
+      const failedCore = [shoppingResult, planResult].filter((result) => result.status === 'rejected').length;
       if (failedCore > 0) {
         setTimeout(() => Alert.alert('Teilweise geladen', 'MealFlow ist gestartet. Einige Daten konnten noch nicht geladen werden und werden beim nächsten Aktualisieren erneut versucht.'), 250);
       }
@@ -1227,7 +1216,6 @@ function MainApp() {
     };
     const channel = supabase.channel(`mealflow-household-${household.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => schedule('shopping', () => { const request = ++shoppingLoadGeneration.current; withTimeout(loadShopping(), 6000, 'Einkaufsliste').then((next) => { if (request === shoppingLoadGeneration.current) setItems(next); }).catch(() => undefined); }))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items', filter }, () => schedule('pantry', () => { withTimeout(loadPantry(), 6000, 'Vorrat').then((next) => { setPantryItems(next); syncExpiryNotifications(next).catch(() => undefined); }).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => schedule('plan', () => { withTimeout(loadMealPlan(), 6000, 'Wochenplan').then((plan) => { setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? '']))); setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? '']))); }).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter }, () => schedule('recipes', () => { withTimeout(loadOwnRecipes(), 5000, 'Rezepte').then(setOwnRecipes).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_history', filter }, () => schedule('history', () => { withTimeout(loadMealHistory(), 5000, 'Verlauf').then(setHistory).catch(() => undefined); }))
@@ -1283,10 +1271,10 @@ function MainApp() {
     <View style={[styles.appRoot, { paddingTop: insets.top }]}>
       <StatusBar style={darkMode ? 'light' : 'dark'} />
       <View style={styles.screenArea}>
-        {tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} pantryItems={pantryItems} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
+        {tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
         {tab === 'woche' ? <PlanScreen household={household} meals={meals} saskiaMeals={saskiaMeals} setMeals={setMeals} setSaskiaMeals={setSaskiaMeals} onSettings={() => setSettingsOpen(true)} /> : null}
         {tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setItems} preferences={preferences} onSettings={() => setSettingsOpen(true)} /> : null}
-        {tab === 'vorrat' ? <InventoryScreen onSettings={() => setSettingsOpen(true)} hapticsEnabled={preferences.hapticsEnabled} /> : null}
+        {tab === 'budget' ? <BudgetScreen household={household} items={items} onSettings={() => setSettingsOpen(true)} /> : null}
       </View>
       <View style={{ paddingBottom: Math.max(insets.bottom, 8), backgroundColor: colors.surface }}><TabBar tab={tab} onChange={changeTab} /></View>
       <SettingsSheet visible={settingsOpen} email={email} household={household} pendingInvites={invitations.length} preferences={preferences} darkMode={darkMode} onPreferencesChange={updatePreferences} onClose={() => setSettingsOpen(false)} onHousehold={() => { setSettingsOpen(false); setHouseholdOpen(true); }} />
@@ -1440,6 +1428,6 @@ let styles = createStyles();
 function refreshAppStyles() {
   styles = createStyles();
   refreshUiComponentStyles();
-  refreshInventoryStyles();
+  refreshBudgetStyles();
 }
 

@@ -1,5 +1,17 @@
 # MealFlow Changelog
 
+## 2.2.9
+
+- Neuer eigener Bereich „Budget“ ersetzt den bisherigen Vorrat in der Hauptnavigation.
+- Die offene Einkaufsliste erhält eine geschätzte Gesamtsumme auf Basis gespeicherter Produktpreise.
+- Produktpreise können direkt im Budget-Bereich pro Einheit gepflegt und für zukünftige Einkäufe wiederverwendet werden.
+- Gramm- und Milliliter-Mengen werden für Preisberechnungen automatisch auf kg bzw. Liter umgerechnet.
+- Neue Budget-Ampel für das monatliche Lebensmittelbudget: grün, orange oder rot abhängig von den geschätzten Ausgaben inklusive aktuellem Einkauf.
+- Budget zeigt Monatsbudget, geschätzt ausgegeben, geplanten Einkauf und voraussichtlich verbleibenden Betrag.
+- Preis- und Budgetdaten werden nach der neuen Supabase-Migration haushaltsweit synchronisiert; bis dahin funktioniert der Bereich mit lokalem Fallback.
+- Vorrat, MHD-Karten und Vorrats-Realtime-Ladevorgänge wurden aus der aktiven App-Navigation entfernt.
+- Version 2.2.9, iOS Build 22, Android Version Code 22.
+
 ## 2.2.8
 
 - Produkte in der Einkaufsliste können direkt über das kleine Stift-Symbol bearbeitet werden.
