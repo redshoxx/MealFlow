@@ -280,14 +280,25 @@ function toOwnRecipe(row: RecipeRow): OwnRecipe {
 
 export async function loadShopping(): Promise<ShoppingItem[]> {
   const householdId = await getActiveHouseholdId();
-  const { data, error } = await supabase
-    .from('shopping_items')
-    .select('id,owner_id,name,amount,unit,done,completed_by,completed_at')
-    .eq('household_id', householdId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  const rows = (data ?? []) as ShoppingRow[];
-  const names = await loadProfileNames(rows.flatMap((row) => [row.completed_by ?? '', row.owner_id ?? '']).filter(Boolean));
+  const pageSize = 500;
+  const rows: ShoppingRow[] = [];
+
+  for (let from = 0; from < 10000; from += pageSize) {
+    const { data, error } = await supabase
+      .from('shopping_items')
+      .select('id,owner_id,name,amount,unit,done,completed_by,completed_at')
+      .eq('household_id', householdId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as ShoppingRow[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  // Displaying shopping products must never depend on optional profile-name metadata.
+  const names = await loadProfileNames(rows.flatMap((row) => [row.completed_by ?? '', row.owner_id ?? '']).filter(Boolean)).catch(() => new Map<string, string>());
   return rows.map((row) => toShoppingItem(row, names));
 }
 
@@ -302,6 +313,28 @@ export async function addShoppingItem(item: Omit<ShoppingItem, 'id' | 'done' | '
   if (error) throw error;
   const names = await loadProfileNames([user.id]);
   return toShoppingItem(data as ShoppingRow, names);
+}
+
+export async function updateShoppingItem(id: string, input: { name: string; amount: number; unit: string }): Promise<ShoppingItem> {
+  const householdId = await getActiveHouseholdId();
+  const cleanName = input.name.trim().slice(0, 120);
+  const cleanUnit = input.unit.trim().slice(0, 24);
+  const cleanAmount = Number(input.amount);
+  if (!cleanName) throw new Error('Bitte gib einen Produktnamen ein.');
+  if (!Number.isFinite(cleanAmount) || cleanAmount <= 0 || cleanAmount > 9999) throw new Error('Bitte gib eine gültige Menge ein.');
+  if (!cleanUnit) throw new Error('Bitte wähle eine Einheit aus.');
+
+  const { data, error } = await requireCloud()
+    .from('shopping_items')
+    .update({ name: cleanName, amount: cleanAmount, unit: cleanUnit })
+    .eq('id', id)
+    .eq('household_id', householdId)
+    .select('id,owner_id,name,amount,unit,done,completed_by,completed_at')
+    .single();
+  if (error) throw error;
+  const row = data as ShoppingRow;
+  const names = await loadProfileNames([row.owner_id ?? '', row.completed_by ?? ''].filter(Boolean)).catch(() => new Map<string, string>());
+  return toShoppingItem(row, names);
 }
 
 export async function setShoppingDone(id: string, done: boolean) {

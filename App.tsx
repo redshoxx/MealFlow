@@ -49,6 +49,7 @@ import {
   setShoppingDone,
   setHouseholdInvitePermission,
   updateMyDisplayName,
+  updateShoppingItem,
   type Household,
   type HouseholdInvitation,
   type MealHistoryEntry,
@@ -691,7 +692,7 @@ function PlanScreen({ household, meals, saskiaMeals, setMeals, setSaskiaMeals, o
   </>;
 }
 
-function ShoppingProductRow({ item, compact, onToggle, onDelete }: { item: ShoppingItem; compact: boolean; onToggle: (item: ShoppingItem) => void; onDelete: (item: ShoppingItem) => void }) {
+function ShoppingProductRow({ item, compact, onToggle, onEdit, onDelete }: { item: ShoppingItem; compact: boolean; onToggle: (item: ShoppingItem) => void; onEdit: (item: ShoppingItem) => void; onDelete: (item: ShoppingItem) => void }) {
   const meta = [`${formatAmount(item.amount)} ${item.unit}`, item.addedByName ? `von ${item.addedByName}` : null, item.done && item.completedByName ? `erledigt von ${item.completedByName}` : null].filter(Boolean).join(' · ');
   return (
     <View style={[styles.shoppingRowV214, compact && styles.shoppingRowCompact]}>
@@ -702,23 +703,26 @@ function ShoppingProductRow({ item, compact, onToggle, onDelete }: { item: Shopp
         <Text style={[styles.shoppingName, item.done && styles.shoppingNameDone]} numberOfLines={1}>{item.name}</Text>
         <Text style={styles.shoppingMetaTiny} numberOfLines={1}>{meta}</Text>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${item.name} löschen`}
-        hitSlop={8}
-        onPress={() => onDelete(item)}
-        style={({ pressed }) => ({
-          width: 34,
-          height: 34,
-          borderRadius: 11,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: pressed ? colors.dangerSoft : colors.surfaceMuted,
-          opacity: pressed ? 0.72 : 1,
-        })}
-      >
-        <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
-      </Pressable>
+      <View style={styles.shoppingRowActions}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${item.name} bearbeiten`}
+          hitSlop={7}
+          onPress={() => onEdit(item)}
+          style={({ pressed }) => [styles.shoppingMiniAction, pressed && styles.shoppingMiniActionPressed]}
+        >
+          <MaterialCommunityIcons name="pencil-outline" size={17} color={colors.textSecondary} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${item.name} löschen`}
+          hitSlop={7}
+          onPress={() => onDelete(item)}
+          style={({ pressed }) => [styles.shoppingMiniAction, styles.shoppingMiniDelete, pressed && styles.shoppingMiniDeletePressed]}
+        >
+          <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -738,6 +742,7 @@ function ShoppingScreen({
 }) {
   const insets = useSafeAreaInsets();
   const [addOpen, setAddOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState(1);
   const [unit, setUnit] = useState('Stk.');
@@ -776,6 +781,7 @@ function ShoppingScreen({
   };
 
   const openAdd = () => {
+    setEditingItem(null);
     setName('');
     setAmount(1);
     setUnit('Stk.');
@@ -783,9 +789,41 @@ function ShoppingScreen({
     feedback();
   };
 
+  const openEdit = (item: ShoppingItem) => {
+    setEditingItem(item);
+    setName(item.name);
+    setAmount(item.amount);
+    setUnit(item.unit);
+    setAddOpen(true);
+    feedback();
+  };
+
+  const closeProductEditor = () => {
+    setAddOpen(false);
+    setEditingItem(null);
+    setRecognizing(false);
+  };
+
   const add = async (overrideName?: string) => {
     const cleanName = (overrideName ?? name).trim();
     if (!cleanName) return;
+
+    if (editingItem) {
+      const previous = editingItem;
+      const optimistic: ShoppingItem = { ...previous, name: cleanName, amount, unit };
+      setItems((current) => current.map((item) => item.id === previous.id ? optimistic : item));
+      closeProductEditor();
+      if (preferences.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      try {
+        const remote = await updateShoppingItem(previous.id, { name: cleanName, amount, unit });
+        setItems((current) => current.map((item) => item.id === previous.id ? remote : item));
+      } catch (error: any) {
+        setItems((current) => current.map((item) => item.id === previous.id ? previous : item));
+        Alert.alert('Änderung nicht gespeichert', germanError(error?.message));
+      }
+      return;
+    }
+
     const temporary: ShoppingItem = {
       id: `local-${Date.now()}`,
       name: cleanName,
@@ -795,7 +833,7 @@ function ShoppingScreen({
       addedByName: household.myDisplayName,
     };
     setItems((current) => [temporary, ...current]);
-    setAddOpen(false);
+    closeProductEditor();
     setName('');
     if (preferences.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     try {
@@ -863,9 +901,9 @@ function ShoppingScreen({
       <View style={styles.shoppingToolbar}><View><Text style={styles.shoppingToolbarLabel}>GEMEINSAME LISTE</Text><Text style={styles.shoppingToolbarTitle}>{active.length ? `${active.length} noch zu besorgen` : 'Alles erledigt'}</Text></View></View>
 
       <SectionTitle title="Offen" />
-      {active.length ? <SurfaceCard style={styles.listCard}>{active.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onDelete={remove} />)}</SurfaceCard> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Eure gemeinsame Einkaufsliste ist aktuell leer." actionLabel="Produkt hinzufügen" onAction={openAdd} /></SurfaceCard>}
+      {active.length ? <SurfaceCard style={styles.listCard}>{active.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Eure gemeinsame Einkaufsliste ist aktuell leer." actionLabel="Produkt hinzufügen" onAction={openAdd} /></SurfaceCard>}
 
-      {preferences.showCompletedShopping && completed.length ? <><SectionTitle title={`Erledigt · ${completed.length}`} /><SurfaceCard style={styles.listCard}>{completed.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onDelete={remove} />)}</SurfaceCard></> : null}
+      {preferences.showCompletedShopping && completed.length ? <><SectionTitle title={`Erledigt · ${completed.length}`} /><SurfaceCard style={styles.listCard}>{completed.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard></> : null}
       <Text style={styles.swipeHint}>Zum Löschen den kleinen Papierkorb beim Produkt verwenden.</Text>
     </ScrollView>
 
@@ -873,18 +911,18 @@ function ShoppingScreen({
       <MaterialCommunityIcons name="plus" size={31} color="#FFFFFF" />
     </Pressable>
 
-    <Modal transparent visible={addOpen} animationType="fade" presentationStyle="overFullScreen" onRequestClose={() => setAddOpen(false)}>
+    <Modal transparent visible={addOpen} animationType="fade" presentationStyle="overFullScreen" onRequestClose={closeProductEditor}>
       <KeyboardAvoidingView style={styles.modalFlex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <Pressable style={styles.modalOverlay} onPress={() => setAddOpen(false)} />
+        <Pressable style={styles.modalOverlay} onPress={closeProductEditor} />
         <View style={[styles.shoppingAddSheet, { paddingBottom: Math.max(insets.bottom, 18) }]} renderToHardwareTextureAndroid>
-          <SheetDismissHandle onClose={() => setAddOpen(false)} />
-          <View style={styles.shoppingSheetHeader}><View><Text style={styles.editorEyebrow}>EINKAUF</Text><Text style={styles.editorTitle}>Produkt hinzufügen</Text></View><IconButton icon="close" onPress={() => setAddOpen(false)} accessibilityLabel="Schließen" /></View>
+          <SheetDismissHandle onClose={closeProductEditor} />
+          <View style={styles.shoppingSheetHeader}><View><Text style={styles.editorEyebrow}>{editingItem ? 'PRODUKT BEARBEITEN' : 'EINKAUF'}</Text><Text style={styles.editorTitle}>{editingItem ? 'Produkt ändern' : 'Produkt hinzufügen'}</Text></View><IconButton icon="close" onPress={closeProductEditor} accessibilityLabel="Schließen" /></View>
           <View style={styles.voiceInputShell}><MaterialCommunityIcons name="cart-outline" size={21} color={colors.textTertiary} /><TextInput autoFocus value={name} onChangeText={setName} onSubmitEditing={() => add()} returnKeyType="done" placeholder="z. B. Milch" placeholderTextColor={colors.textTertiary} style={styles.voiceProductInput} /><Pressable onPress={recognizing ? () => ExpoSpeechRecognitionModule.stop() : startVoice} style={[styles.micButton, recognizing && styles.micButtonActive]}><MaterialCommunityIcons name={recognizing ? 'stop' : 'microphone-outline'} size={22} color={recognizing ? '#FFFFFF' : colors.accent} /></Pressable></View>
           {recognizing ? <Text style={styles.listeningText}>Ich höre zu … z. B. „2 Liter Milch“.</Text> : null}
           {suggestions.length ? <View style={styles.suggestionBox}>{suggestions.map((suggestion) => <Pressable key={suggestion} onPress={() => setName(suggestion)} style={styles.suggestionRow}><MaterialCommunityIcons name="magnify" size={17} color={colors.textTertiary} /><Text style={styles.suggestionText}>{suggestion}</Text></Pressable>)}</View> : null}
           <View style={styles.quantityControlRow}><View><Text style={styles.miniLabel}>MENGE</Text><Text style={styles.quantityValue}>{formatAmount(amount)}</Text></View><View style={styles.quantityButtons}><Pressable onPress={() => changeAmount(-0.5)} style={styles.quantityRoundButton}><MaterialCommunityIcons name="minus" size={20} color={colors.text} /></Pressable><Pressable onPress={() => changeAmount(0.5)} style={styles.quantityRoundButton}><MaterialCommunityIcons name="plus" size={20} color={colors.text} /></Pressable></View></View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitChips}>{UNITS.map((value) => <Pressable key={value} onPress={() => setUnit(value)} style={[styles.unitChip, unit === value && styles.unitChipActive]}><Text style={[styles.unitChipText, unit === value && styles.unitChipTextActive]}>{value}</Text></Pressable>)}</ScrollView>
-          <ActionButton label="Zur Einkaufsliste hinzufügen" icon="plus" onPress={() => add()} disabled={!name.trim()} />
+          <ActionButton label={editingItem ? "Änderungen speichern" : "Zur Einkaufsliste hinzufügen"} icon={editingItem ? "check" : "plus"} onPress={() => add()} disabled={!name.trim()} />
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -1048,6 +1086,7 @@ function MainApp() {
   const [preferences, setPreferences] = useState<AppPreferences>(DEFAULT_PREFERENCES);
   const [darkMode, setDarkMode] = useState(false);
   const loadGeneration = useRef(0);
+  const shoppingLoadGeneration = useRef(0);
 
   const applyAppearance = (mode: ThemeMode, cozy = preferences.cozyMode) => {
     const nextDark = mode === 'dark' || (mode === 'system' && Appearance.getColorScheme() === 'dark');
@@ -1099,7 +1138,17 @@ function MainApp() {
     ]);
     if (generation !== loadGeneration.current) return;
 
-    if (shoppingResult.status === 'fulfilled') setItems(shoppingResult.value);
+    if (shoppingResult.status === 'fulfilled') {
+      shoppingLoadGeneration.current += 1;
+      setItems(shoppingResult.value);
+    } else {
+      const retryRequest = ++shoppingLoadGeneration.current;
+      setTimeout(() => {
+        withTimeout(loadShopping(), 6500, 'Einkaufsliste').then((next) => {
+          if (retryRequest === shoppingLoadGeneration.current) setItems(next);
+        }).catch(() => undefined);
+      }, 700);
+    }
     if (planResult.status === 'fulfilled') {
       const plan = planResult.value;
       setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
@@ -1177,7 +1226,7 @@ function MainApp() {
       timers.set(key, timer);
     };
     const channel = supabase.channel(`mealflow-household-${household.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => schedule('shopping', () => { withTimeout(loadShopping(), 6000, 'Einkaufsliste').then(setItems).catch(() => undefined); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => schedule('shopping', () => { const request = ++shoppingLoadGeneration.current; withTimeout(loadShopping(), 6000, 'Einkaufsliste').then((next) => { if (request === shoppingLoadGeneration.current) setItems(next); }).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items', filter }, () => schedule('pantry', () => { withTimeout(loadPantry(), 6000, 'Vorrat').then((next) => { setPantryItems(next); syncExpiryNotifications(next).catch(() => undefined); }).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => schedule('plan', () => { withTimeout(loadMealPlan(), 6000, 'Wochenplan').then((plan) => { setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? '']))); setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? '']))); }).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter }, () => schedule('recipes', () => { withTimeout(loadOwnRecipes(), 5000, 'Rezepte').then(setOwnRecipes).catch(() => undefined); }))
@@ -1322,6 +1371,11 @@ function createStyles() {
   shoppingRowV214: { minHeight: 64, paddingHorizontal: 13, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   shoppingRowCompact: { minHeight: 54, paddingVertical: 6 },
   shoppingMetaTiny: { fontSize: 11, lineHeight: 15, color: colors.textTertiary, marginTop: 1 },
+  shoppingRowActions: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  shoppingMiniAction: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceMuted },
+  shoppingMiniActionPressed: { opacity: 0.68 },
+  shoppingMiniDelete: { backgroundColor: colors.surfaceMuted },
+  shoppingMiniDeletePressed: { backgroundColor: colors.dangerSoft, opacity: 0.72 },
   swipeRowClip: { position: 'relative', overflow: 'hidden', backgroundColor: colors.danger },
   swipeDeleteBack: { ...StyleSheet.absoluteFill, paddingRight: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5, backgroundColor: colors.danger },
   swipeDeleteText: { ...typography.caption, color: '#FFFFFF', fontWeight: '800' },

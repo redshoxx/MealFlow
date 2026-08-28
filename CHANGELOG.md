@@ -1,5 +1,16 @@
 # MealFlow Changelog
 
+## 2.2.8
+
+- Produkte in der Einkaufsliste können direkt über das kleine Stift-Symbol bearbeitet werden.
+- Name, Menge und Einheit lassen sich im bestehenden iPhone-artigen Bottom-Sheet ändern.
+- Änderungen werden optimistisch angezeigt und bei einem Serverfehler sauber zurückgesetzt.
+- Einkaufsliste wird stabil paginiert geladen, sodass auch größere Listen vollständig ankommen.
+- Fehler beim optionalen Laden von Mitgliedsnamen können die Produktliste nicht mehr ausblenden.
+- Veraltete Realtime-Antworten werden ignoriert, damit neuere Listenzustände nicht überschrieben werden.
+- Fehlgeschlagene Startabfragen der Einkaufsliste erhalten automatisch einen Hintergrund-Retry.
+- Version 2.2.8, iOS Build 21, Android Version Code 21.
+
 ## 2.2.7
 
 - Start-Deadlock endgültig behoben: Ein Fehler kann MealFlow nicht mehr in einen endlosen Ladebildschirm zurückführen.
