@@ -1,5 +1,16 @@
 # MealFlow Changelog
 
+## 2.2.7
+
+- Start-Deadlock endgültig behoben: Ein Fehler kann MealFlow nicht mehr in einen endlosen Ladebildschirm zurückführen.
+- Kritische Startabfragen haben feste Timeouts und brechen kontrolliert mit einer Wiederholen-Seite ab.
+- Einkauf, Wochenplan und Vorrat laden unabhängig voneinander; einzelne Fehler blockieren die App nicht mehr vollständig.
+- Sekundäre Daten werden nach dem Kernstart im Hintergrund ergänzt.
+- Sitzungsprüfung ist gegen Hängen abgesichert.
+- Realtime-Ereignisse werden 180 ms gebündelt, wodurch doppelte Supabase-Abfragen bei schnellen Änderungen reduziert werden.
+- Hintergrund-Reloads besitzen ebenfalls Timeouts und können sich nicht unbegrenzt aufstauen.
+- Version 2.2.7, iOS Build 20, Android Version Code 20.
+
 ## 2.2.6 Hotfix Build 19
 
 - Endlos-Ladefehler behoben: ein fehlgeschlagener Haushalts-Start kann die App nicht mehr dauerhaft im Loader festhalten.

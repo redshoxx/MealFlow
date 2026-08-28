@@ -1087,15 +1087,15 @@ function MainApp() {
     clearHouseholdCache();
     if (startup) setStartupProgress(10);
 
-    const nextHousehold = await withTimeout(loadHousehold(), 10000, 'Haushalt');
+    const nextHousehold = await withTimeout(loadHousehold(), 8000, 'Haushalt');
     if (generation !== loadGeneration.current) return;
     setHousehold(nextHousehold);
     if (startup) setStartupProgress(32);
 
     const [shoppingResult, planResult, pantryResult] = await Promise.allSettled([
-      withTimeout(loadShopping(), 9000, 'Einkaufsliste'),
-      withTimeout(loadMealPlan(), 9000, 'Wochenplan'),
-      withTimeout(loadPantry(), 9000, 'Vorrat'),
+      withTimeout(loadShopping(), 6500, 'Einkaufsliste'),
+      withTimeout(loadMealPlan(), 6500, 'Wochenplan'),
+      withTimeout(loadPantry(), 6500, 'Vorrat'),
     ]);
     if (generation !== loadGeneration.current) return;
 
@@ -1166,15 +1166,29 @@ function MainApp() {
   useEffect(() => {
     if (!household?.id) return;
     const filter = `household_id=eq.${household.id}`;
+    const timers = new Map<string, ReturnType<typeof setTimeout>>();
+    const schedule = (key: string, work: () => void) => {
+      const current = timers.get(key);
+      if (current) clearTimeout(current);
+      const timer = setTimeout(() => {
+        timers.delete(key);
+        work();
+      }, 180);
+      timers.set(key, timer);
+    };
     const channel = supabase.channel(`mealflow-household-${household.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => loadShopping().then(setItems).catch(() => undefined))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items', filter }, () => loadPantry().then((next) => { setPantryItems(next); syncExpiryNotifications(next).catch(() => undefined); }).catch(() => undefined))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => loadMealPlan().then((plan) => { setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? '']))); setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? '']))); }).catch(() => undefined))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter }, () => loadOwnRecipes().then(setOwnRecipes).catch(() => undefined))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_history', filter }, () => loadMealHistory().then(setHistory).catch(() => undefined))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'household_members', filter }, () => loadHousehold().then(setHousehold).catch(() => undefined))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => schedule('shopping', () => { withTimeout(loadShopping(), 6000, 'Einkaufsliste').then(setItems).catch(() => undefined); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items', filter }, () => schedule('pantry', () => { withTimeout(loadPantry(), 6000, 'Vorrat').then((next) => { setPantryItems(next); syncExpiryNotifications(next).catch(() => undefined); }).catch(() => undefined); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => schedule('plan', () => { withTimeout(loadMealPlan(), 6000, 'Wochenplan').then((plan) => { setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? '']))); setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? '']))); }).catch(() => undefined); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter }, () => schedule('recipes', () => { withTimeout(loadOwnRecipes(), 5000, 'Rezepte').then(setOwnRecipes).catch(() => undefined); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_history', filter }, () => schedule('history', () => { withTimeout(loadMealHistory(), 5000, 'Verlauf').then(setHistory).catch(() => undefined); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'household_members', filter }, () => schedule('household', () => { withTimeout(loadHousehold(), 6000, 'Haushalt').then(setHousehold).catch(() => undefined); }))
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+      supabase.removeChannel(channel);
+    };
   }, [household?.id]);
 
   const changeTab = (next: Tab) => {
@@ -1213,7 +1227,7 @@ function MainApp() {
     }
   };
 
-  if (startupError && !household) return <StartupErrorScreen message={startupError} onRetry={startApplication} />;
+  if (startupError) return <StartupErrorScreen message={startupError} onRetry={startApplication} />;
   if (!ready || !household) return <LoadingScreen message="Deine Daten werden sicher geladen …" progress={startupProgress} />;
 
   return (
