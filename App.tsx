@@ -76,6 +76,51 @@ const GROCERY_SUGGESTIONS = [
   'Hühnerfleisch', 'Hackfleisch', 'Lachs', 'Salat', 'Zucchini', 'Karotten'
 ];
 
+
+type LidlCategoryKey =
+  | 'produce'
+  | 'bakery'
+  | 'dairy'
+  | 'meat-fish'
+  | 'staples'
+  | 'pantry'
+  | 'breakfast'
+  | 'snacks'
+  | 'drinks'
+  | 'frozen'
+  | 'household'
+  | 'other';
+
+const LIDL_CATEGORY_ORDER: Array<{ key: LidlCategoryKey; label: string }> = [
+  { key: 'produce', label: 'Obst & Gemüse' },
+  { key: 'bakery', label: 'Backwaren' },
+  { key: 'dairy', label: 'Kühlung & Milchprodukte' },
+  { key: 'meat-fish', label: 'Fleisch, Wurst & Fisch' },
+  { key: 'staples', label: 'Grundnahrungsmittel' },
+  { key: 'pantry', label: 'Konserven & Saucen' },
+  { key: 'breakfast', label: 'Frühstück' },
+  { key: 'snacks', label: 'Snacks & Süßes' },
+  { key: 'drinks', label: 'Getränke' },
+  { key: 'frozen', label: 'Tiefkühlung' },
+  { key: 'household', label: 'Haushalt & Drogerie' },
+  { key: 'other', label: 'Sonstiges' },
+];
+
+const LIDL_CATEGORY_KEYWORDS: Record<LidlCategoryKey, string[]> = {
+  produce: ['apfel', 'banane', 'tomate', 'gurke', 'paprika', 'kartoffel', 'erdapfel', 'zwiebel', 'knoblauch', 'salat', 'zucchini', 'karotte', 'mohre', 'brokkoli', 'blumenkohl', 'avocado', 'zitrone', 'orange', 'mandarine', 'traube', 'beere', 'erdbeer', 'himbeer', 'heidelbeer', 'pilz', 'champignon', 'lauch', 'sellerie', 'kohl', 'kraut', 'kurbis', 'spinat', 'mango', 'kiwi', 'birne', 'obst', 'gemuse'],
+  bakery: ['brot', 'semmel', 'brotchen', 'toast', 'baguette', 'ciabatta', 'croissant', 'weckerl', 'geback', 'backware'],
+  dairy: ['milch', 'butter', 'joghurt', 'yogurt', 'kase', 'quark', 'topfen', 'sahne', 'obers', 'creme fraiche', 'mozzarella', 'feta', 'pudding', 'kefir', 'mascarpone', 'ei', 'eier'],
+  'meat-fish': ['fleisch', 'huhn', 'hendl', 'hahnchen', 'chicken', 'rind', 'schwein', 'hackfleisch', 'faschiert', 'wurst', 'schinken', 'speck', 'salami', 'fisch', 'lachs', 'forelle', 'garnelen'],
+  staples: ['nudel', 'pasta', 'reis', 'mehl', 'zucker', 'salz', 'ol', 'essig', 'couscous', 'bulgur', 'linsen', 'kichererbse', 'gewurz', 'bruhe', 'gries', 'polenta'],
+  pantry: ['passierte tomate', 'dosentomate', 'tomatenmark', 'konserve', 'ketchup', 'mayonnaise', 'mayo', 'senf', 'sauce', 'pesto', 'kokosmilch', 'dose', 'mais', 'bohnen'],
+  breakfast: ['musli', 'haferflock', 'cornflakes', 'cerealien', 'marmelade', 'honig', 'nusscreme', 'nutella', 'kaffee', 'tee'],
+  snacks: ['schokolade', 'chips', 'keks', 'gummibar', 'nusse', 'nuss', 'popcorn', 'riegel', 'bonbon', 'sussigkeit', 'cracker'],
+  drinks: ['wasser', 'mineral', 'cola', 'limonade', 'limo', 'saft', 'eistee', 'energy', 'bier', 'wein', 'prosecco', 'sirup', 'getrank'],
+  frozen: ['tiefkuhl', 'tiefgekuhlt', 'tk ', 'eiscreme', 'speiseeis', 'pommes', 'frozen'],
+  household: ['toilettenpapier', 'kuchenrolle', 'waschmittel', 'spulmittel', 'reiniger', 'mullbeutel', 'alufolie', 'frischhaltefolie', 'schwamm', 'zahnpasta', 'zahnburste', 'shampoo', 'duschgel', 'seife', 'deodorant', 'deo', 'rasierer', 'windel', 'katzenstreu', 'hundefutter', 'katzenfutter'],
+  other: [],
+};
+
 type Tab = StartTab;
 type RecipeSelection = { kind: 'recipe'; recipe: Recipe } | { kind: 'own'; recipe: OwnRecipe };
 type SearchFilters = { maxMinutes: number | null; vegetarianOnly: boolean; ingredient: string; excludeThisWeek: boolean };
@@ -176,6 +221,43 @@ function getWeekDays(weekOffset = 0) {
 
 function normalizeTitle(value: string) {
   return value.toLocaleLowerCase('de-AT').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').trim();
+}
+
+
+function getLidlCategory(name: string): LidlCategoryKey {
+  const normalized = normalizeTitle(name);
+
+  // More specific packaged-food terms must win over generic words such as "Tomate".
+  const priority: LidlCategoryKey[] = ['frozen', 'household', 'pantry', 'meat-fish', 'dairy', 'bakery', 'breakfast', 'snacks', 'drinks', 'staples', 'produce'];
+  for (const key of priority) {
+    if (LIDL_CATEGORY_KEYWORDS[key].some((keyword) => normalized.includes(keyword))) return key;
+  }
+  return 'other';
+}
+
+function groupShoppingForLidl(items: ShoppingItem[]) {
+  const grouped = new Map<LidlCategoryKey, ShoppingItem[]>();
+  for (const item of items) {
+    const key = getLidlCategory(item.name);
+    const current = grouped.get(key) ?? [];
+    current.push(item);
+    grouped.set(key, current);
+  }
+
+  return LIDL_CATEGORY_ORDER
+    .map((category) => ({
+      ...category,
+      items: (grouped.get(category.key) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, 'de-AT')),
+    }))
+    .filter((category) => category.items.length > 0);
+}
+
+function sortShoppingForLidl(items: ShoppingItem[]) {
+  const categoryIndex = new Map(LIDL_CATEGORY_ORDER.map((category, index) => [category.key, index]));
+  return items.slice().sort((a, b) => {
+    const categoryDelta = (categoryIndex.get(getLidlCategory(a.name)) ?? 999) - (categoryIndex.get(getLidlCategory(b.name)) ?? 999);
+    return categoryDelta || a.name.localeCompare(b.name, 'de-AT');
+  });
 }
 
 function lastCookedLabel(entry?: MealHistoryEntry) {
@@ -759,6 +841,8 @@ function ShoppingScreen({
 
   const active = useMemo(() => items.filter((item) => !item.done), [items]);
   const completed = useMemo(() => items.filter((item) => item.done), [items]);
+  const activeGroups = useMemo(() => groupShoppingForLidl(active), [active]);
+  const completedSorted = useMemo(() => sortShoppingForLidl(completed), [completed]);
   const suggestions = useMemo(() => {
     const needle = normalizeTitle(name);
     if (needle.length < 2) return [];
@@ -897,9 +981,12 @@ function ShoppingScreen({
       <View style={styles.shoppingToolbar}><View><Text style={styles.shoppingToolbarLabel}>GEMEINSAME LISTE</Text><Text style={styles.shoppingToolbarTitle}>{active.length ? `${active.length} noch zu besorgen` : 'Alles erledigt'}</Text></View></View>
 
       <SectionTitle title="Offen" />
-      {active.length ? <SurfaceCard style={styles.listCard}>{active.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Eure gemeinsame Einkaufsliste ist aktuell leer." actionLabel="Produkt hinzufügen" onAction={openAdd} /></SurfaceCard>}
+      {active.length ? <View style={styles.shoppingCategoryList}>{activeGroups.map((group) => <View key={group.key} style={styles.shoppingCategorySection}>
+        <View style={styles.shoppingCategoryHeader}><Text style={styles.shoppingCategoryTitle}>{group.label}</Text><Text style={styles.shoppingCategoryCount}>{group.items.length}</Text></View>
+        <SurfaceCard style={styles.listCard}>{group.items.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard>
+      </View>)}</View> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Eure gemeinsame Einkaufsliste ist aktuell leer." actionLabel="Produkt hinzufügen" onAction={openAdd} /></SurfaceCard>}
 
-      {preferences.showCompletedShopping && completed.length ? <><SectionTitle title={`Erledigt · ${completed.length}`} /><SurfaceCard style={styles.listCard}>{completed.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard></> : null}
+      {preferences.showCompletedShopping && completed.length ? <><SectionTitle title={`Erledigt · ${completed.length}`} /><SurfaceCard style={styles.listCard}>{completedSorted.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard></> : null}
       <Text style={styles.swipeHint}>Zum Löschen den kleinen Papierkorb beim Produkt verwenden.</Text>
     </ScrollView>
 
@@ -1098,10 +1185,10 @@ function MainApp() {
 
   const loadSecondaryData = async (generation: number) => {
     const [recipesResult, historyResult, invitesResult, userResult] = await Promise.allSettled([
-      withTimeout(loadOwnRecipes(), 8000, 'Rezepte'),
-      withTimeout(loadMealHistory(), 8000, 'Verlauf'),
-      withTimeout(loadPendingHouseholdInvitations(), 8000, 'Einladungen'),
-      withTimeout(supabase.auth.getUser(), 8000, 'Benutzerprofil'),
+      withTimeout(loadOwnRecipes(), 5000, 'Rezepte'),
+      withTimeout(loadMealHistory(), 5000, 'Verlauf'),
+      withTimeout(loadPendingHouseholdInvitations(), 5000, 'Einladungen'),
+      withTimeout(supabase.auth.getUser(), 5000, 'Benutzerprofil'),
     ]);
     if (generation !== loadGeneration.current) return;
     if (recipesResult.status === 'fulfilled') setOwnRecipes(recipesResult.value);
@@ -1111,7 +1198,6 @@ function MainApp() {
   };
 
   const reloadAll = async (startup = false) => {
-    const startedAt = Date.now();
     const generation = ++loadGeneration.current;
     if (startup) {
       setStartupError(null);
@@ -1121,49 +1207,54 @@ function MainApp() {
     clearHouseholdCache();
     if (startup) setStartupProgress(10);
 
-    const nextHousehold = await withTimeout(loadHousehold(), 8000, 'Haushalt');
+    const nextHousehold = await withTimeout(loadHousehold(), 6000, 'Haushalt');
     if (generation !== loadGeneration.current) return;
     setHousehold(nextHousehold);
-    if (startup) setStartupProgress(32);
+    if (startup) setStartupProgress(58);
 
-    const [shoppingResult, planResult] = await Promise.allSettled([
-      withTimeout(loadShopping(), 6500, 'Einkaufsliste'),
-      withTimeout(loadMealPlan(), 6500, 'Wochenplan'),
-    ]);
-    if (generation !== loadGeneration.current) return;
+    const loadPrimaryData = async () => {
+      const [shoppingResult, planResult] = await Promise.allSettled([
+        withTimeout(loadShopping(), 5000, 'Einkaufsliste'),
+        withTimeout(loadMealPlan(), 5000, 'Wochenplan'),
+      ]);
+      if (generation !== loadGeneration.current) return;
 
-    if (shoppingResult.status === 'fulfilled') {
-      shoppingLoadGeneration.current += 1;
-      setItems(shoppingResult.value);
-    } else {
-      const retryRequest = ++shoppingLoadGeneration.current;
-      setTimeout(() => {
-        withTimeout(loadShopping(), 6500, 'Einkaufsliste').then((next) => {
-          if (retryRequest === shoppingLoadGeneration.current) setItems(next);
-        }).catch(() => undefined);
-      }, 700);
-    }
-    if (planResult.status === 'fulfilled') {
-      const plan = planResult.value;
-      setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
-      setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
-    }
+      if (shoppingResult.status === 'fulfilled') {
+        shoppingLoadGeneration.current += 1;
+        setItems(shoppingResult.value);
+      } else {
+        const retryRequest = ++shoppingLoadGeneration.current;
+        setTimeout(() => {
+          withTimeout(loadShopping(), 5000, 'Einkaufsliste').then((next) => {
+            if (retryRequest === shoppingLoadGeneration.current) setItems(next);
+          }).catch(() => undefined);
+        }, 500);
+      }
+
+      if (planResult.status === 'fulfilled') {
+        const plan = planResult.value;
+        setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
+        setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
+      }
+    };
+
     if (startup) {
-      setStartupProgress(78);
-      const minimumVisible = 650 - (Date.now() - startedAt);
-      if (minimumVisible > 0) await new Promise((resolve) => setTimeout(resolve, minimumVisible));
+      setStartupProgress(68);
+      const primaryPromise = loadPrimaryData();
+      await Promise.race([
+        primaryPromise,
+        new Promise<void>((resolve) => setTimeout(resolve, 320)),
+      ]);
       if (generation !== loadGeneration.current) return;
       setStartupProgress(100);
       setReady(true);
+      void primaryPromise;
       void loadSecondaryData(generation);
-
-      const failedCore = [shoppingResult, planResult].filter((result) => result.status === 'rejected').length;
-      if (failedCore > 0) {
-        setTimeout(() => Alert.alert('Teilweise geladen', 'MealFlow ist gestartet. Einige Daten konnten noch nicht geladen werden und werden beim nächsten Aktualisieren erneut versucht.'), 250);
-      }
       return;
     }
 
+    await loadPrimaryData();
+    if (generation !== loadGeneration.current) return;
     await loadSecondaryData(generation);
     if (generation !== loadGeneration.current) return;
     setReady(true);
@@ -1359,6 +1450,11 @@ function createStyles() {
   shoppingRowV214: { minHeight: 64, paddingHorizontal: 13, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   shoppingRowCompact: { minHeight: 54, paddingVertical: 6 },
   shoppingMetaTiny: { fontSize: 11, lineHeight: 15, color: colors.textTertiary, marginTop: 1 },
+  shoppingCategoryList: { gap: 14 },
+  shoppingCategorySection: { gap: 7 },
+  shoppingCategoryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
+  shoppingCategoryTitle: { fontSize: 13, lineHeight: 17, fontWeight: '700', color: colors.textSecondary },
+  shoppingCategoryCount: { minWidth: 24, height: 24, borderRadius: 12, textAlign: 'center', textAlignVertical: 'center', paddingTop: Platform.OS === 'ios' ? 3 : 1, fontSize: 11, fontWeight: '700', color: colors.textTertiary, backgroundColor: colors.surfaceMuted },
   shoppingRowActions: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   shoppingMiniAction: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceMuted },
   shoppingMiniActionPressed: { opacity: 0.68 },

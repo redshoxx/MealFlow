@@ -2,6 +2,10 @@
 
 ## 2.2.9
 
+- Einkaufsliste wird automatisch in Lidl-orientierten Bereichen gruppiert und innerhalb der Bereiche alphabetisch sortiert.
+- Bestehende und neu angelegte Produkte werden ohne manuelle Kategorie anhand ihres Namens einsortiert.
+- Startpfad beschleunigt: Nach dem Haushalt blockieren Einkauf und Wochenplan den ersten nutzbaren Bildschirm höchstens noch kurz und laden andernfalls im Hintergrund weiter.
+- Hintergrundabfragen und Retry-Zeiten wurden verkürzt, ohne den Start bei langsamer Verbindung wieder zu blockieren.
 - Neuer eigener Bereich „Budget“ ersetzt den bisherigen Vorrat in der Hauptnavigation.
 - Die offene Einkaufsliste erhält eine geschätzte Gesamtsumme auf Basis gespeicherter Produktpreise.
 - Produktpreise können direkt im Budget-Bereich pro Einheit gepflegt und für zukünftige Einkäufe wiederverwendet werden.
@@ -10,7 +14,7 @@
 - Budget zeigt Monatsbudget, geschätzt ausgegeben, geplanten Einkauf und voraussichtlich verbleibenden Betrag.
 - Preis- und Budgetdaten werden nach der neuen Supabase-Migration haushaltsweit synchronisiert; bis dahin funktioniert der Bereich mit lokalem Fallback.
 - Vorrat, MHD-Karten und Vorrats-Realtime-Ladevorgänge wurden aus der aktiven App-Navigation entfernt.
-- Version 2.2.9, iOS Build 22, Android Version Code 22.
+- Version 2.2.9, iOS Build 23, Android Version Code 23.
 
 ## 2.2.8
 

@@ -9,14 +9,14 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "at.mealflow.app",
-      "buildNumber": "22"
+      "buildNumber": "23"
     },
     "android": {
       "package": "at.mealflow.app",
       "adaptiveIcon": {
         "backgroundColor": "#214F33"
       },
-      "versionCode": 22,
+      "versionCode": 23,
       "permissions": [
         "REQUEST_INSTALL_PACKAGES"
       ]
