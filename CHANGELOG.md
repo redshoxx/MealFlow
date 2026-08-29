@@ -1,5 +1,11 @@
 # MealFlow Changelog
 
+## 2.3.0
+
+- Versionssprung auf MealFlow 2.3.0.
+- Enthält den aktuellen schnellen App-Start und die automatische Lidl-orientierte Kategorisierung der Einkaufsliste.
+- iOS Build 24, Android Version Code 24.
+
 ## 2.2.9
 
 - Einkaufsliste wird automatisch in Lidl-orientierten Bereichen gruppiert und innerhalb der Bereiche alphabetisch sortiert.
