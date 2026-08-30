@@ -23,6 +23,16 @@ jobs:
           cache: npm
       - name: Apply 2.3.1 patch
         run: python3 scripts/apply-v231.py
+      - name: Fix notes style compatibility
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/screens/NotesScreen.tsx')
+          text = path.read_text()
+          text = text.replace('...typography.h3', '...typography.title')
+          text = text.replace("overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.22)' },", "overlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.22)' },")
+          path.write_text(text)
+          PY
       - name: Install dependencies
         run: npm ci --ignore-scripts
       - name: Typecheck
