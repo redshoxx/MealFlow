@@ -61,7 +61,7 @@ import { isCloudConfigured, supabase } from './src/lib/supabase';
 import { ActionButton, EmptyState, IconButton, refreshUiComponentStyles, ScreenHeader, SectionTitle, SurfaceCard } from './src/ui/components';
 import { colors, getShadow, radius, setThemePalette, spacing, typography } from './src/ui/theme';
 import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';
-import { BudgetScreen, refreshBudgetStyles } from './src/screens/BudgetScreen';
+import { NotesScreen, refreshNotesStyles } from './src/screens/NotesScreen';
 import { checkAndPromptAndroidUpdate } from './src/lib/androidUpdater';
 import appConfig from './app.json';
 
@@ -219,6 +219,10 @@ function getWeekDays(weekOffset = 0) {
   });
 }
 
+function getPlanningMonthDays() {
+  return [1, 2, 3, 4].flatMap((weekOffset) => getWeekDays(weekOffset));
+}
+
 function normalizeTitle(value: string) {
   return value.toLocaleLowerCase('de-AT').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').trim();
 }
@@ -312,7 +316,7 @@ function SheetDismissHandle({ onClose }: { onClose: () => void }) {
 
 function LoadingScreen({ message = 'MealFlow wird vorbereitet …', progress = 0 }: { message?: string; progress?: number }) {
   const safeProgress = Math.max(0, Math.min(100, Math.round(progress)));
-  return <View style={styles.loadingScreen}><View style={styles.loadingLogo}><MaterialCommunityIcons name="silverware-fork-knife" size={30} color="#FFFFFF" /></View><Text style={styles.loadingBrand}>MealFlow</Text><Text style={styles.loadingMessage}>{message}</Text><View style={styles.loadingProgress}><View style={[styles.loadingProgressFill, { width: `${safeProgress}%` as `${number}%` }]} /></View><Text style={styles.loadingPercent}>{safeProgress}%</Text><Text style={styles.loadingHint}>Haushalt · Einkauf · Woche · Budget</Text></View>;
+  return <View style={styles.loadingScreen}><View style={styles.loadingLogo}><MaterialCommunityIcons name="silverware-fork-knife" size={30} color="#FFFFFF" /></View><Text style={styles.loadingBrand}>MealFlow</Text><Text style={styles.loadingMessage}>{message}</Text><View style={styles.loadingProgress}><View style={[styles.loadingProgressFill, { width: `${safeProgress}%` as `${number}%` }]} /></View><Text style={styles.loadingPercent}>{safeProgress}%</Text><Text style={styles.loadingHint}>Haushalt · Einkauf · 4-Wochen-Plan · Notizen</Text></View>;
 }
 
 function StartupErrorScreen({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -377,7 +381,7 @@ function AuthScreen() {
         <View style={styles.brandMark}><MaterialCommunityIcons name="silverware-fork-knife" size={28} color="#FFFFFF" /></View>
         <Text style={styles.authBrand}>MealFlow</Text>
         <Text style={styles.authHero}>Gemeinsam planen. Gezielt einkaufen. Besser kochen.</Text>
-        <Text style={styles.authSubtitle}>Wochenplan, Einkaufsliste und Rezepte für deinen Haushalt – synchron auf iPhone und Android.</Text>
+        <Text style={styles.authSubtitle}>Wochenplan, Einkaufsliste und persönliche Notizen – synchron auf iPhone und Android.</Text>
         <SurfaceCard style={styles.authCard}>
           <View style={styles.segmentedControl}>
             <Pressable onPress={() => setMode('signin')} style={[styles.segmentButton, mode === 'signin' && styles.segmentButtonActive]}><Text style={[styles.segmentText, mode === 'signin' && styles.segmentTextActive]}>Anmelden</Text></Pressable>
@@ -599,7 +603,7 @@ function SettingsSheet({
     { key: 'heute', label: 'Heute' },
     { key: 'woche', label: 'Woche' },
     { key: 'einkauf', label: 'Einkauf' },
-    { key: 'budget', label: 'Budget' },
+    { key: 'notizen', label: 'Notizen' },
   ];
 
   return (
@@ -649,34 +653,42 @@ function SettingsSheet({
 
 function HomeScreen({ household, meals, items, history, onNavigate, onSettings, onCooked }: { household: Household; meals: Record<string, string>; items: ShoppingItem[]; history: MealHistoryEntry[]; onNavigate: (tab: Tab) => void; onSettings: () => void; onCooked: (title: string) => Promise<void> }) {
   const tonight = meals[todayIso()] || '';
-  const planned = getWeekDays(1).filter((entry) => Boolean(meals[entry.iso])).length;
+  const planned = getPlanningMonthDays().filter((entry) => Boolean(meals[entry.iso])).length;
   const openItems = items.filter((item) => !item.done).length;
   const cookedToday = tonight ? history.some((entry) => entry.cookedOn === todayIso() && normalizeTitle(entry.recipeTitle) === normalizeTitle(tonight)) : false;
   const dateLabel = new Date().toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' });
   return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
     <ScreenHeader eyebrow={`${dateLabel} · ${household.name}`} title="Heute" subtitle={`Gemeinsam mit ${household.members.length} ${household.members.length === 1 ? 'Person' : 'Personen'} planen.`} action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
     <SurfaceCard style={styles.heroCard}><View style={styles.heroIcon}><MaterialCommunityIcons name="silverware-fork-knife" size={25} color={colors.accent} /></View><Text style={styles.heroLabel}>HEUTE ABEND</Text><Text style={styles.heroMeal}>{tonight || 'Noch nichts geplant'}</Text><Text style={styles.heroMeta}>{tonight ? cookedToday ? 'Als gekocht markiert – der Haushalt ist auf dem gleichen Stand.' : 'Dein Abendessen ist im gemeinsamen Wochenplan.' : 'Plane jetzt ein Abendessen für den Haushalt.'}</Text><View style={styles.heroActions}><ActionButton label={tonight ? 'Wochenplan öffnen' : 'Abendessen planen'} icon="calendar-week-outline" onPress={() => onNavigate('woche')} variant="secondary" style={styles.flexButton} />{tonight && !cookedToday ? <ActionButton label="Gekocht" icon="check-circle-outline" onPress={() => onCooked(tonight)} style={styles.flexButton} /> : null}</View></SurfaceCard>
-    <View style={styles.metricsRow}><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="calendar-check-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{planned}/7</Text><Text style={styles.metricLabel}>nächste Woche geplant</Text></SurfaceCard><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="cart-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{openItems}</Text><Text style={styles.metricLabel}>offene Einkäufe</Text></SurfaceCard></View>
-    <SectionTitle title="Schnellzugriff" /><View style={styles.quickGrid}><Pressable style={styles.quickAction} onPress={() => onNavigate('woche')}><View style={styles.quickIcon}><MaterialCommunityIcons name="calendar-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Woche planen</Text><Text style={styles.quickText}>Abendessen gemeinsam festlegen.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Einkauf ergänzen</Text><Text style={styles.quickText}>Jeder im Haushalt sieht Änderungen sofort.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('budget')}><View style={styles.quickIcon}><MaterialCommunityIcons name="wallet-outline" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Budget</Text><Text style={styles.quickText}>Einkauf schätzen und Monatsbudget prüfen.</Text></Pressable></View>
+    <View style={styles.metricsRow}><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="calendar-check-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{planned}/28</Text><Text style={styles.metricLabel}>nächste 4 Wochen geplant</Text></SurfaceCard><SurfaceCard style={styles.metricCard}><MaterialCommunityIcons name="cart-outline" size={22} color={colors.accent} /><Text style={styles.metricNumber}>{openItems}</Text><Text style={styles.metricLabel}>offene Einkäufe</Text></SurfaceCard></View>
+    <SectionTitle title="Schnellzugriff" /><View style={styles.quickGrid}><Pressable style={styles.quickAction} onPress={() => onNavigate('woche')}><View style={styles.quickIcon}><MaterialCommunityIcons name="calendar-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Woche planen</Text><Text style={styles.quickText}>Abendessen gemeinsam festlegen.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Einkauf ergänzen</Text><Text style={styles.quickText}>Jeder im Haushalt sieht Änderungen sofort.</Text></Pressable><Pressable style={styles.quickAction} onPress={() => onNavigate('notizen')}><View style={styles.quickIcon}><MaterialCommunityIcons name="note-text-outline" size={22} color={colors.accent} /></View><Text style={styles.quickTitle}>Notizen</Text><Text style={styles.quickText}>Privat festhalten und einzelne Notizen gezielt teilen.</Text></Pressable></View>
   </ScrollView>;
 }
 
 function PlanScreen({ household, meals, saskiaMeals, setMeals, setSaskiaMeals, onSettings }: { household: Household; meals: Record<string, string>; saskiaMeals: Record<string, string>; setMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; setSaskiaMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; onSettings: () => void }) {
   const insets = useSafeAreaInsets();
+  const [selectedWeek, setSelectedWeek] = useState(0);
   const [editingDay, setEditingDay] = useState<string | null>(null);
   const [editingDate, setEditingDate] = useState<string | null>(null);
   const [editingSlot, setEditingSlot] = useState<'main' | 'saskia'>('main');
   const [mealText, setMealText] = useState('');
-  const weekDays = getWeekDays(1).map((entry) => ({
+
+  const planningWeeks = [1, 2, 3, 4].map((weekOffset) => getWeekDays(weekOffset).map((entry) => ({
     ...entry,
     meal: meals[entry.iso]?.trim() ?? '',
     saskiaMeal: saskiaMeals[entry.iso]?.trim() ?? '',
-  }));
-  const plannedSlots = weekDays.reduce((count, entry) => count + (entry.meal ? 1 : 0) + (entry.saskiaMeal ? 1 : 0), 0);
-  const remainingSlots = 14 - plannedSlots;
-  const startDate = weekDays[0]!.date;
-  const endDate = weekDays[6]!.date;
+  })));
+  const allDays = planningWeeks.flat();
+  const totalSlots = allDays.length * 2;
+  const plannedSlots = allDays.reduce((count, entry) => count + (entry.meal ? 1 : 0) + (entry.saskiaMeal ? 1 : 0), 0);
+  const remainingSlots = totalSlots - plannedSlots;
+  const startDate = allDays[0]!.date;
+  const endDate = allDays[allDays.length - 1]!.date;
   const rangeLabel = `${startDate.toLocaleDateString('de-AT', { day: '2-digit', month: 'short' })} – ${endDate.toLocaleDateString('de-AT', { day: '2-digit', month: 'short' })}`;
+  const selectedWeekDays = planningWeeks[selectedWeek] ?? planningWeeks[0]!;
+  const selectedStart = selectedWeekDays[0]!.date;
+  const selectedEnd = selectedWeekDays[6]!.date;
+  const selectedRangeLabel = `${selectedStart.toLocaleDateString('de-AT', { day: '2-digit', month: 'short' })} – ${selectedEnd.toLocaleDateString('de-AT', { day: '2-digit', month: 'short' })}`;
 
   const closeEditor = () => {
     setEditingDay(null);
@@ -728,16 +740,28 @@ function PlanScreen({ household, meals, saskiaMeals, setMeals, setSaskiaMeals, o
 
   return <>
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
-      <ScreenHeader eyebrow={`${rangeLabel} · ${household.name}`} title="Wochenplan" subtitle="Pro Tag zwei Gerichte planen – ein gemeinsames Abendessen und eines für Saskia." action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
+      <ScreenHeader eyebrow={`${rangeLabel} · ${household.name}`} title="4-Wochen-Plan" subtitle="Vier Wochen im Voraus planen – pro Tag ein gemeinsames Abendessen und ein Gericht für Saskia." action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />} />
       <SurfaceCard style={styles.weekOverviewCard}>
-        <View style={styles.weekOverviewTop}><View><Text style={styles.weekOverviewLabel}>NÄCHSTE WOCHE</Text><Text style={styles.weekOverviewTitle}>{plannedSlots} von 14 Gerichten geplant</Text></View><View style={styles.weekOverviewBadge}><MaterialCommunityIcons name={remainingSlots === 0 ? 'check-all' : 'calendar-edit'} size={20} color={colors.accent} /><Text style={styles.weekOverviewBadgeText}>{remainingSlots === 0 ? 'Fertig' : `${remainingSlots} offen`}</Text></View></View>
-        <View style={styles.weekProgressTrack}><View style={[styles.weekProgressFill, { width: `${Math.round((plannedSlots / 14) * 100)}%` as `${number}%` }]} /></View>
-        <View style={styles.weekStrip}>{weekDays.map((entry) => <View key={entry.iso} style={styles.weekStripDay}><Text style={styles.weekStripDow}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={styles.weekStripDate}>{entry.dayNumber}</Text><View style={styles.weekStripDots}><View style={[styles.weekStripDot, entry.meal ? styles.weekStripDotPlanned : styles.weekStripDotOpen]} /><View style={[styles.weekStripDot, entry.saskiaMeal ? styles.weekStripDotSaskia : styles.weekStripDotOpen]} /></View></View>)}</View>
+        <View style={styles.weekOverviewTop}><View style={styles.flex1}><Text style={styles.weekOverviewLabel}>NÄCHSTE 4 WOCHEN</Text><Text style={styles.weekOverviewTitle}>{plannedSlots} von {totalSlots} Gerichten geplant</Text></View><View style={styles.weekOverviewBadge}><MaterialCommunityIcons name={remainingSlots === 0 ? 'check-all' : 'calendar-month-outline'} size={20} color={colors.accent} /><Text style={styles.weekOverviewBadgeText}>{remainingSlots === 0 ? 'Fertig' : `${remainingSlots} offen`}</Text></View></View>
+        <View style={styles.weekProgressTrack}><View style={[styles.weekProgressFill, { width: `${Math.round((plannedSlots / totalSlots) * 100)}%` as `${number}%` }]} /></View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.monthWeekSelector}>
+          {planningWeeks.map((days, index) => {
+            const weekPlanned = days.reduce((count, entry) => count + (entry.meal ? 1 : 0) + (entry.saskiaMeal ? 1 : 0), 0);
+            const active = selectedWeek === index;
+            const first = days[0]!.date;
+            const last = days[6]!.date;
+            return <Pressable key={index} onPress={() => setSelectedWeek(index)} style={[styles.monthWeekChip, active && styles.monthWeekChipActive]}>
+              <View style={styles.monthWeekChipTop}><Text style={[styles.monthWeekChipLabel, active && styles.monthWeekChipLabelActive]}>WOCHE {index + 1}</Text><Text style={[styles.monthWeekChipCount, active && styles.monthWeekChipCountActive]}>{weekPlanned}/14</Text></View>
+              <Text style={[styles.monthWeekChipRange, active && styles.monthWeekChipRangeActive]}>{first.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })} – {last.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' })}</Text>
+            </Pressable>;
+          })}
+        </ScrollView>
+        <View style={styles.weekStrip}>{selectedWeekDays.map((entry) => <View key={entry.iso} style={styles.weekStripDay}><Text style={styles.weekStripDow}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={styles.weekStripDate}>{entry.dayNumber}</Text><View style={styles.weekStripDots}><View style={[styles.weekStripDot, entry.meal ? styles.weekStripDotPlanned : styles.weekStripDotOpen]} /><View style={[styles.weekStripDot, entry.saskiaMeal ? styles.weekStripDotSaskia : styles.weekStripDotOpen]} /></View></View>)}</View>
       </SurfaceCard>
 
-      <View style={styles.weekSectionHeader}><View><Text style={styles.weekSectionTitle}>Abendessen</Text><Text style={styles.weekSectionHint}>Zwei getrennte Gerichte pro Tag</Text></View><MaterialCommunityIcons name="silverware-fork-knife" size={22} color={colors.accent} /></View>
+      <View style={styles.weekSectionHeader}><View><Text style={styles.weekSectionTitle}>Woche {selectedWeek + 1} von 4</Text><Text style={styles.weekSectionHint}>{selectedRangeLabel} · zwei Gerichte pro Tag</Text></View><MaterialCommunityIcons name="calendar-week" size={22} color={colors.accent} /></View>
 
-      <View style={styles.dayList}>{weekDays.map((entry) => {
+      <View style={styles.dayList}>{selectedWeekDays.map((entry) => {
         const dayPlanned = (entry.meal ? 1 : 0) + (entry.saskiaMeal ? 1 : 0);
         return <View key={entry.iso} style={styles.dayCard}>
           <View style={styles.dayDateBlock}><Text style={styles.dayDateDow}>{entry.day.slice(0, 2).toUpperCase()}</Text><Text style={styles.dayDateNumber}>{entry.dayNumber}</Text><Text style={styles.dayDateMonth}>{entry.monthShort}</Text></View>
@@ -832,6 +856,7 @@ function ShoppingScreen({
   const [unit, setUnit] = useState('Stk.');
   const [recognizing, setRecognizing] = useState(false);
   const [undoItem, setUndoItem] = useState<ShoppingItem | null>(null);
+  const [completedExpanded, setCompletedExpanded] = useState(false);
 
   useSpeechRecognitionEvent('start', () => setRecognizing(true));
   useSpeechRecognitionEvent('end', () => setRecognizing(false));
@@ -992,7 +1017,13 @@ function ShoppingScreen({
         <SurfaceCard style={styles.listCard}>{group.items.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard>
       </View>)}</View> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Eure gemeinsame Einkaufsliste ist aktuell leer." actionLabel="Produkt hinzufügen" onAction={openAdd} /></SurfaceCard>}
 
-      {preferences.showCompletedShopping && completed.length ? <><SectionTitle title={`Erledigt · ${completed.length}`} /><SurfaceCard style={styles.listCard}>{completedSorted.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard></> : null}
+      {preferences.showCompletedShopping && completed.length ? <View style={styles.completedSection}>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: completedExpanded }} onPress={() => setCompletedExpanded((value) => !value)} style={({ pressed }) => [styles.completedToggle, pressed && { opacity: 0.72 }]}>
+          <View style={styles.completedToggleLeft}><View style={styles.completedToggleIcon}><MaterialCommunityIcons name="check-all" size={19} color={colors.accent} /></View><View><Text style={styles.completedToggleTitle}>Erledigt</Text><Text style={styles.completedToggleMeta}>{completed.length} {completed.length === 1 ? 'Produkt' : 'Produkte'}</Text></View></View>
+          <MaterialCommunityIcons name={completedExpanded ? 'chevron-up' : 'chevron-down'} size={24} color={colors.textTertiary} />
+        </Pressable>
+        {completedExpanded ? <SurfaceCard style={styles.listCard}>{completedSorted.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard> : null}
+      </View> : null}
       <Text style={styles.swipeHint}>Zum Löschen den kleinen Papierkorb beim Produkt verwenden.</Text>
     </ScrollView>
 
@@ -1149,7 +1180,7 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
     { key: 'heute', label: 'Heute', icon: 'home-variant-outline', active: 'home-variant' },
     { key: 'woche', label: 'Woche', icon: 'calendar-week-outline', active: 'calendar-week' },
     { key: 'einkauf', label: 'Einkauf', icon: 'cart-outline', active: 'cart' },
-    { key: 'budget', label: 'Budget', icon: 'wallet-outline', active: 'wallet' },
+    { key: 'notizen', label: 'Notizen', icon: 'note-text-outline', active: 'note-text' },
   ];
   return <View style={styles.tabBar}>{tabs.map((item) => { const active = tab === item.key; return <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => onChange(item.key)} style={styles.tabItem}><MaterialCommunityIcons name={active ? item.active : item.icon} size={23} color={active ? colors.accent : colors.textTertiary} /><Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{item.label}</Text></Pressable>; })}</View>;
 }
@@ -1371,7 +1402,7 @@ function MainApp() {
         {tab === 'heute' ? <HomeScreen household={household} meals={meals} items={items} history={history} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
         {tab === 'woche' ? <PlanScreen household={household} meals={meals} saskiaMeals={saskiaMeals} setMeals={setMeals} setSaskiaMeals={setSaskiaMeals} onSettings={() => setSettingsOpen(true)} /> : null}
         {tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setItems} preferences={preferences} onSettings={() => setSettingsOpen(true)} /> : null}
-        {tab === 'budget' ? <BudgetScreen household={household} items={items} onSettings={() => setSettingsOpen(true)} /> : null}
+        {tab === 'notizen' ? <NotesScreen household={household} onSettings={() => setSettingsOpen(true)} /> : null}
       </View>
       <View style={{ paddingBottom: Math.max(insets.bottom, 8), backgroundColor: colors.surface }}><TabBar tab={tab} onChange={changeTab} /></View>
       <SettingsSheet visible={settingsOpen} email={email} household={household} pendingInvites={invitations.length} preferences={preferences} darkMode={darkMode} onPreferencesChange={updatePreferences} onClose={() => setSettingsOpen(false)} onHousehold={() => { setSettingsOpen(false); setHouseholdOpen(true); }} />
@@ -1521,6 +1552,22 @@ function createStyles() {
   recipeInstructionsInput: { minHeight: 180, paddingTop: 14 },
   recipeSummaryCard: { padding: 15, flexDirection: 'row', alignItems: 'center', gap: 12 },
   recipeWizardFooter: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 18, flexDirection: 'row', gap: 10, backgroundColor: colors.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  monthWeekSelector: { gap: 8, paddingTop: 14, paddingBottom: 6, paddingRight: 4 },
+  monthWeekChip: { width: 132, minHeight: 64, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 11, paddingVertical: 9, gap: 5 },
+  monthWeekChipActive: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+  monthWeekChipTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  monthWeekChipLabel: { ...typography.caption, color: colors.textTertiary, fontWeight: '800' },
+  monthWeekChipLabelActive: { color: colors.accent },
+  monthWeekChipCount: { fontSize: 10, fontWeight: '800', color: colors.textTertiary },
+  monthWeekChipCountActive: { color: colors.accent },
+  monthWeekChipRange: { fontSize: 11, color: colors.textSecondary },
+  monthWeekChipRangeActive: { color: colors.text },
+  completedSection: { gap: 8, marginTop: 4 },
+  completedToggle: { minHeight: 58, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  completedToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  completedToggleIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  completedToggleTitle: { ...typography.bodyStrong, color: colors.text },
+  completedToggleMeta: { ...typography.caption, color: colors.textTertiary, marginTop: 1 },
 
   });
 }
@@ -1530,6 +1577,6 @@ let styles = createStyles();
 function refreshAppStyles() {
   styles = createStyles();
   refreshUiComponentStyles();
-  refreshBudgetStyles();
+  refreshNotesStyles();
 }
 

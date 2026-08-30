@@ -1,5 +1,15 @@
 # MealFlow Changelog
 
+## 2.3.1
+
+- Erledigte Produkte der Einkaufsliste lassen sich kompakt ein- und ausklappen.
+- Neues professionelles MealFlow-App-Icon mit klarer Teller-/Planungs-Symbolik.
+- Wochenplan wurde zum 4-Wochen-Plan erweitert und hält die nächsten 28 Tage gleichzeitig vor.
+- Budget in der Hauptnavigation wurde durch persönliche Notizen ersetzt.
+- Notizen sind standardmäßig nur für den jeweiligen Benutzer sichtbar.
+- Einzelne Notizen können gezielt mit anderen Mitgliedern desselben Haushalts geteilt werden; Bearbeiten und Löschen bleibt beim Besitzer.
+- Version 2.3.1, iOS Build 25, Android Version Code 25.
+
 ## 2.3.0
 
 - Versionssprung auf MealFlow 2.3.0.

@@ -360,10 +360,14 @@ export async function deleteShoppingItem(id: string) {
 
 export async function loadMealPlan(): Promise<MealDay[]> {
   const householdId = await getActiveHouseholdId();
-  const from = new Date();
-  from.setDate(from.getDate() - 8);
-  const until = new Date();
-  until.setDate(until.getDate() + 22);
+  const now = new Date();
+  now.setHours(12, 0, 0, 0);
+  const from = new Date(now);
+  from.setDate(now.getDate() - 1);
+  const nextMonday = new Date(now);
+  nextMonday.setDate(now.getDate() - ((now.getDay() + 6) % 7) + 7);
+  const until = new Date(nextMonday);
+  until.setDate(nextMonday.getDate() + 27);
   const toIso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const { data, error } = await supabase
     .from('meal_plan_entries')
