@@ -1,7 +1,7 @@
 {
   "name": "mealflow",
-  "version": "2.3.1",
-  "description": "MealFlow – gemeinsame Essensplanung, Einkauf und Lebensmittelbudget.",
+  "version": "2.3.2",
+  "description": "MealFlow – gemeinsame Essensplanung, Einkauf und persönliche Notizen.",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
