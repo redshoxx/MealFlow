@@ -1,0 +1,38 @@
+name: Apply MealFlow 2.3.1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/apply-v231.py'
+      - '.github/workflows/apply-v231.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply 2.3.1 patch
+        run: python3 scripts/apply-v231.py
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Generate new app icon
+        run: npm run generate:icon
+      - name: Commit verified update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add App.tsx src/lib/cloud.ts src/lib/preferences.ts src/lib/notes.ts src/screens/NotesScreen.tsx scripts/generate-app-icon.cjs assets/icon.png assets/adaptive-icon.png app.json package.json package-lock.json CHANGELOG.md supabase/migrations/202608301645_mealflow_2_3_1_private_shareable_notes.sql
+          git commit -m "feat: MealFlow 2.3.1 notes month plan and icon"
+          git push
