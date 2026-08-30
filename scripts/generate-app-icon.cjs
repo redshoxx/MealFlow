@@ -49,49 +49,59 @@ function insideRotatedEllipse(x, y, cx, cy, rx, ry, angle) {
   return (px * px) / (rx * rx) + (py * py) / (ry * ry) <= 1;
 }
 
-function angleBetween(value, start, end) {
-  const twoPi = Math.PI * 2;
-  let a = (value + twoPi) % twoPi;
-  let s = (start + twoPi) % twoPi;
-  let e = (end + twoPi) % twoPi;
-  if (s <= e) return a >= s && a <= e;
-  return a >= s || a <= e;
+function distanceToSegment(px, py, ax, ay, bx, by) {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const apx = px - ax;
+  const apy = py - ay;
+  const lengthSquared = abx * abx + aby * aby;
+  const t = lengthSquared ? Math.max(0, Math.min(1, (apx * abx + apy * aby) / lengthSquared)) : 0;
+  const cx = ax + abx * t;
+  const cy = ay + aby * t;
+  return Math.hypot(px - cx, py - cy);
+}
+
+function mix(a, b, t) {
+  return Math.round(a * (1 - t) + b * t);
 }
 
 function makePixels(withBackground) {
   const pixels = Buffer.alloc(SIZE * SIZE * 4);
-  const offWhite = [247, 248, 244, 255];
-  const accent = [191, 225, 173, 255];
-  const green = [47, 107, 69, 255];
+  const ivory = [249, 249, 244, 255];
+  const lime = [190, 226, 168, 255];
+  const deepGreen = [25, 68, 44, 255];
+  const midGreen = [47, 107, 69, 255];
+
   for (let y = 0; y < SIZE; y += 1) {
-    const t = y / (SIZE - 1);
-    const bg = [Math.round(33 * (1 - t) + 59 * t), Math.round(79 * (1 - t) + 122 * t), Math.round(51 * (1 - t) + 80 * t), 255];
+    const vertical = y / (SIZE - 1);
     for (let x = 0; x < SIZE; x += 1) {
       const i = (y * SIZE + x) * 4;
-      let color = withBackground ? bg : [0, 0, 0, 0];
-      const dx = x - 512;
-      const dy = y - 512;
-      const r = Math.hypot(dx, dy);
-      if (withBackground && r < 350) color = green;
-      if (Math.abs(r - 264) <= 27) color = offWhite;
+      const radial = Math.min(1, Math.hypot(x - 470, y - 420) / 760);
+      const gradientT = Math.min(1, vertical * 0.52 + radial * 0.34);
+      let color = withBackground
+        ? [mix(deepGreen[0], midGreen[0], gradientT), mix(deepGreen[1], midGreen[1], gradientT), mix(deepGreen[2], midGreen[2], gradientT), 255]
+        : [0, 0, 0, 0];
 
-      const a1x = x - 512;
-      const a1y = y - 465;
-      const a1r = Math.hypot(a1x, a1y);
-      const a1 = Math.atan2(a1y, a1x);
-      if (Math.abs(a1r - 150) <= 27 && angleBetween(a1, Math.PI * 0.92, Math.PI * 1.93)) color = offWhite;
+      const dx = x - 500;
+      const dy = y - 535;
+      const radius = Math.hypot(dx, dy);
 
-      const a2x = x - 512;
-      const a2y = y - 575;
-      const a2r = Math.hypot(a2x, a2y);
-      const a2 = Math.atan2(a2y, a2x);
-      if (Math.abs(a2r - 150) <= 27 && angleBetween(a2, -Math.PI * 0.08, Math.PI * 0.93)) color = offWhite;
+      // Bold plate ring: clear at small icon sizes and visually tied to food.
+      if (radius >= 242 && radius <= 316) color = ivory;
 
-      if (insideRotatedEllipse(x, y, 682, 360, 82, 48, -0.58)) color = accent;
-      if (insideRotatedEllipse(x, y, 682, 360, 62, 7, -0.58)) color = green;
-      if ((x - 322) ** 2 + (y - 514) ** 2 <= 28 ** 2) color = accent;
+      // Planning/checkmark symbol inside the plate.
+      const checkA = distanceToSegment(x, y, 350, 548, 455, 648);
+      const checkB = distanceToSegment(x, y, 455, 648, 670, 414);
+      if (checkA <= 34 || checkB <= 34) color = ivory;
 
-      pixels[i] = color[0]; pixels[i + 1] = color[1]; pixels[i + 2] = color[2]; pixels[i + 3] = color[3];
+      // Small leaf accent makes the icon feel fresh without adding clutter.
+      if (insideRotatedEllipse(x, y, 710, 302, 98, 48, -0.66)) color = lime;
+      if (distanceToSegment(x, y, 650, 350, 760, 250) <= 10) color = deepGreen;
+
+      pixels[i] = color[0];
+      pixels[i + 1] = color[1];
+      pixels[i + 2] = color[2];
+      pixels[i + 3] = color[3];
     }
   }
   return pixels;
