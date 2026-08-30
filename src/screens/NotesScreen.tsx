@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { type Household } from '../lib/cloud';
 import {
@@ -26,10 +26,12 @@ import {
   type PersonalNote,
 } from '../lib/notes';
 import { supabase } from '../lib/supabase';
-import { ActionButton, EmptyState, IconButton, ScreenHeader, SurfaceCard } from '../ui/components';
+import { EmptyState, IconButton, ScreenHeader, SurfaceCard } from '../ui/components';
 import { colors, radius, spacing, typography } from '../ui/theme';
 
 type NotesFilter = 'all' | 'mine' | 'shared';
+
+type EditorIconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 function updatedLabel(value: string) {
   const date = new Date(value);
@@ -42,6 +44,43 @@ function updatedLabel(value: string) {
 function previewText(value: string) {
   const clean = value.trim().replace(/\s+/g, ' ');
   return clean || 'Noch kein Inhalt';
+}
+
+function fallbackTitle(title: string, content: string) {
+  const clean = title.trim().replace(/\s+/g, ' ');
+  if (clean) return clean.slice(0, 120);
+  const firstContentLine = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  return (firstContentLine || 'Notiz').slice(0, 120);
+}
+
+function EditorIconButton({
+  icon,
+  onPress,
+  accessibilityLabel,
+  disabled = false,
+  danger = false,
+}: {
+  icon: EditorIconName;
+  onPress: () => void;
+  accessibilityLabel: string;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      disabled={disabled}
+      hitSlop={8}
+      onPress={onPress}
+      style={({ pressed }) => [styles.editorIconButton, pressed && styles.editorIconButtonPressed, disabled && styles.editorIconButtonDisabled]}
+    >
+      <MaterialCommunityIcons name={icon} size={25} color={danger ? colors.danger : colors.text} />
+    </Pressable>
+  );
 }
 
 export function NotesScreen({ household, onSettings }: { household: Household; onSettings: () => void }) {
@@ -95,6 +134,13 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
     return true;
   }), [notes, filter]);
 
+  const resetEditor = () => {
+    setEditorOpen(false);
+    setEditingNote(null);
+    setTitle('');
+    setContent('');
+  };
+
   const openNew = () => {
     setEditingNote(null);
     setTitle('');
@@ -110,27 +156,26 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
     setEditorOpen(true);
   };
 
-  const closeEditor = () => {
+  const finishEditor = async () => {
     if (saving) return;
-    setEditorOpen(false);
-    setEditingNote(null);
-    setTitle('');
-    setContent('');
-  };
-
-  const save = async () => {
-    const cleanTitle = title.trim();
-    if (!cleanTitle) {
-      Alert.alert('Titel fehlt', 'Gib der Notiz einen kurzen Titel.');
+    if (editingNote?.isOwner === false) {
+      resetEditor();
       return;
     }
+
+    const hasText = Boolean(title.trim() || content.trim());
+    if (!hasText && !editingNote) {
+      resetEditor();
+      return;
+    }
+
+    const resolvedTitle = fallbackTitle(title, content);
     setSaving(true);
     try {
-      if (editingNote) await updateNote(editingNote.id, { title: cleanTitle, content });
-      else await createNote({ title: cleanTitle, content });
+      if (editingNote) await updateNote(editingNote.id, { title: resolvedTitle, content });
+      else await createNote({ title: resolvedTitle, content });
       await reload(true);
-      setEditorOpen(false);
-      setEditingNote(null);
+      resetEditor();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     } catch (error: any) {
       Alert.alert('Notiz nicht gespeichert', error?.message || 'Bitte versuche es erneut.');
@@ -149,8 +194,7 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
           void (async () => {
             try {
               await deleteNote(note.id);
-              setEditorOpen(false);
-              setEditingNote(null);
+              resetEditor();
               setNotes((current) => current.filter((entry) => entry.id !== note.id));
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
             } catch (error: any) {
@@ -189,7 +233,7 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
       { text: 'Entfernen', style: 'destructive', onPress: () => void (async () => {
         try {
           await stopReceivingSharedNote(note.id);
-          setEditorOpen(false);
+          resetEditor();
           setNotes((current) => current.filter((entry) => entry.id !== note.id));
         } catch (error: any) {
           Alert.alert('Nicht möglich', error?.message || 'Bitte versuche es erneut.');
@@ -197,6 +241,15 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
       })() },
     ]);
   };
+
+  const editorReadOnly = editingNote?.isOwner === false;
+  const editorMeta = editorReadOnly
+    ? `Geteilt von ${editingNote?.ownerName ?? 'Mitglied'}`
+    : editingNote
+      ? `Bearbeitet ${updatedLabel(editingNote.updatedAt)}`
+      : title.trim() || content.trim()
+        ? 'Noch nicht gespeichert'
+        : 'Neue Notiz';
 
   return <View style={styles.root}>
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.content, { paddingBottom: 110 + insets.bottom }]}>
@@ -246,50 +299,72 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
       <MaterialCommunityIcons name="plus" size={31} color="#FFFFFF" />
     </Pressable>
 
-    <Modal visible={editorOpen} animationType="slide" presentationStyle="fullScreen" onRequestClose={closeEditor}>
-      <SafeAreaView style={styles.editorRoot} edges={['top', 'bottom']}>
+    <Modal visible={editorOpen} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => void finishEditor()}>
+      <View style={[styles.editorRoot, { paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 12 : 8) }]}>
         <KeyboardAvoidingView style={styles.flex1} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.editorHeader}>
-            <IconButton icon="close" onPress={closeEditor} accessibilityLabel="Notiz schließen" />
-            <View style={styles.editorHeaderText}><Text style={styles.editorEyebrow}>{editingNote?.isOwner === false ? 'GETEILTE NOTIZ' : editingNote ? 'NOTIZ BEARBEITEN' : 'NEUE NOTIZ'}</Text><Text style={styles.editorHeaderTitle}>{editingNote?.isOwner === false ? `Von ${editingNote.ownerName}` : 'Notiz'}</Text></View>
-            {editingNote?.isOwner ? <IconButton icon="share-variant-outline" onPress={() => setShareNote(editingNote)} accessibilityLabel="Notiz teilen" /> : <View style={styles.headerSpacer} />}
+            <EditorIconButton icon="arrow-left" onPress={() => void finishEditor()} accessibilityLabel="Zurück und Notiz speichern" disabled={saving} />
+            <View style={styles.editorHeaderActions}>
+              {saving ? <View style={styles.editorSaving}><ActivityIndicator size="small" color={colors.accent} /></View> : null}
+              {editingNote?.isOwner ? <EditorIconButton icon="share-variant-outline" onPress={() => setShareNote(editingNote)} accessibilityLabel="Notiz teilen" /> : null}
+              {editingNote?.isOwner ? <EditorIconButton icon="trash-can-outline" onPress={() => confirmDelete(editingNote)} accessibilityLabel="Notiz löschen" danger /> : null}
+              {editorReadOnly && editingNote ? <EditorIconButton icon="share-off-outline" onPress={() => hideSharedNote(editingNote)} accessibilityLabel="Geteilte Notiz entfernen" danger /> : null}
+            </View>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.editorContent}>
+
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            contentContainerStyle={styles.editorContent}
+          >
+            {editorReadOnly ? <View style={styles.readOnlyBanner}><MaterialCommunityIcons name="account-eye-outline" size={18} color={colors.accent} /><Text style={styles.readOnlyBannerText}>{editorMeta} · Nur lesen</Text></View> : null}
             <TextInput
               value={title}
               onChangeText={setTitle}
-              editable={!editingNote || editingNote.isOwner}
+              editable={!editorReadOnly}
               maxLength={120}
+              multiline
               placeholder="Titel"
               placeholderTextColor={colors.textTertiary}
-              style={[styles.titleInput, editingNote?.isOwner === false && styles.readOnlyInput]}
+              style={[styles.keepTitleInput, editorReadOnly && styles.readOnlyText]}
             />
             <TextInput
               value={content}
               onChangeText={setContent}
-              editable={!editingNote || editingNote.isOwner}
+              editable={!editorReadOnly}
               maxLength={12000}
               multiline
+              scrollEnabled={false}
               textAlignVertical="top"
-              placeholder="Schreib etwas auf …"
+              placeholder="Notiz schreiben"
               placeholderTextColor={colors.textTertiary}
-              style={[styles.contentInput, editingNote?.isOwner === false && styles.readOnlyInput]}
+              style={[styles.keepContentInput, editorReadOnly && styles.readOnlyText]}
             />
-            {editingNote?.isOwner === false ? <SurfaceCard style={styles.sharedInfo}><MaterialCommunityIcons name="shield-lock-outline" size={21} color={colors.accent} /><View style={styles.flex1}><Text style={styles.sharedInfoTitle}>Nur lesen</Text><Text style={styles.sharedInfoText}>Die Notiz gehört {editingNote.ownerName}. Nur der Besitzer kann den Inhalt ändern.</Text></View></SurfaceCard> : null}
           </ScrollView>
-          <View style={[styles.editorFooter, { paddingBottom: Math.max(insets.bottom, 14) }]}>
-            {editingNote?.isOwner ? <Pressable onPress={() => confirmDelete(editingNote)} style={styles.deleteButton}><MaterialCommunityIcons name="trash-can-outline" size={20} color={colors.danger} /></Pressable> : editingNote ? <Pressable onPress={() => hideSharedNote(editingNote)} style={styles.deleteButton}><MaterialCommunityIcons name="share-off-outline" size={20} color={colors.danger} /></Pressable> : null}
-            {editingNote?.isOwner === false ? <ActionButton label="Schließen" icon="check" onPress={closeEditor} style={styles.flex1} /> : <ActionButton label={editingNote ? 'Änderungen speichern' : 'Notiz speichern'} icon="content-save-outline" onPress={save} loading={saving} disabled={!title.trim()} style={styles.flex1} />}
+
+          <View style={[styles.keepFooter, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+            <View style={styles.keepFooterLeft}>
+              <MaterialCommunityIcons name={editorReadOnly ? 'share-variant-outline' : 'lock-outline'} size={17} color={colors.textTertiary} />
+              <Text style={styles.keepFooterMeta} numberOfLines={1}>{editorMeta}</Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              disabled={saving}
+              onPress={() => void finishEditor()}
+              style={({ pressed }) => [styles.doneButton, pressed && styles.doneButtonPressed, saving && styles.doneButtonDisabled]}
+            >
+              {saving ? <ActivityIndicator size="small" color={colors.accent} /> : <Text style={styles.doneButtonText}>{editorReadOnly ? 'Schließen' : 'Fertig'}</Text>}
+            </Pressable>
           </View>
         </KeyboardAvoidingView>
-      </SafeAreaView>
+      </View>
     </Modal>
 
     <Modal transparent visible={Boolean(shareNote)} animationType="fade" presentationStyle="overFullScreen" onRequestClose={() => setShareNote(null)}>
       <Pressable style={styles.overlay} onPress={() => setShareNote(null)} />
       <View style={[styles.shareSheet, { paddingBottom: Math.max(insets.bottom, 18) }]}>
         <View style={styles.handle} />
-        <View style={styles.shareHeader}><View style={styles.flex1}><Text style={styles.editorEyebrow}>NOTIZ TEILEN</Text><Text style={styles.shareTitle} numberOfLines={1}>{shareNote?.title}</Text></View><IconButton icon="close" onPress={() => setShareNote(null)} accessibilityLabel="Teilen schließen" /></View>
+        <View style={styles.shareHeader}><View style={styles.flex1}><Text style={styles.shareEyebrow}>NOTIZ TEILEN</Text><Text style={styles.shareTitle} numberOfLines={1}>{shareNote?.title}</Text></View><IconButton icon="close" onPress={() => setShareNote(null)} accessibilityLabel="Teilen schließen" /></View>
         <Text style={styles.shareHint}>Nur ausgewählte Personen können diese Notiz lesen. Bearbeiten kann weiterhin nur der Besitzer.</Text>
         <View style={styles.shareList}>{shareCandidates.map((member) => {
           const shared = Boolean(shareNote?.sharedWith.some((entry) => entry.userId === member.userId));
@@ -336,25 +411,33 @@ function createStyles() {
     shareQuickButton: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
     fab: { position: 'absolute', right: 20, width: 58, height: 58, borderRadius: 29, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.17, shadowRadius: 9, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
     fabPressed: { transform: [{ scale: 0.96 }], opacity: 0.9 },
-    editorRoot: { flex: 1, backgroundColor: colors.background },
-    editorHeader: { minHeight: 64, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 10 },
-    editorHeaderText: { flex: 1, alignItems: 'center' },
-    editorEyebrow: { ...typography.label, color: colors.accent },
-    editorHeaderTitle: { ...typography.title, color: colors.text, marginTop: 2 },
-    headerSpacer: { width: 44 },
-    editorContent: { padding: 18, gap: 12, flexGrow: 1 },
-    titleInput: { minHeight: 58, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 16, ...typography.h2, color: colors.text },
-    contentInput: { minHeight: 280, flexGrow: 1, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: 16, ...typography.body, color: colors.text, lineHeight: 23 },
-    readOnlyInput: { backgroundColor: colors.surfaceMuted },
-    sharedInfo: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14 },
-    sharedInfoTitle: { ...typography.label, color: colors.text },
-    sharedInfoText: { ...typography.caption, color: colors.textSecondary, marginTop: 3 },
-    editorFooter: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surface, flexDirection: 'row', gap: 10, alignItems: 'center' },
-    deleteButton: { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.dangerSoft, alignItems: 'center', justifyContent: 'center' },
+
+    editorRoot: { flex: 1, backgroundColor: colors.surface },
+    editorHeader: { minHeight: 58, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.surface },
+    editorHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+    editorIconButton: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+    editorIconButtonPressed: { backgroundColor: colors.surfaceMuted },
+    editorIconButtonDisabled: { opacity: 0.4 },
+    editorSaving: { width: 36, alignItems: 'center', justifyContent: 'center' },
+    editorContent: { flexGrow: 1, paddingHorizontal: 22, paddingTop: 8, paddingBottom: 48 },
+    keepTitleInput: { paddingHorizontal: 0, paddingVertical: 8, fontSize: 27, lineHeight: 34, fontWeight: '600', color: colors.text, minHeight: 54 },
+    keepContentInput: { paddingHorizontal: 0, paddingTop: 8, paddingBottom: 28, minHeight: 360, fontSize: 18, lineHeight: 27, color: colors.text },
+    readOnlyText: { color: colors.textSecondary },
+    readOnlyBanner: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, minHeight: 34, borderRadius: radius.pill, backgroundColor: colors.accentSoft, marginBottom: 10 },
+    readOnlyBannerText: { ...typography.caption, color: colors.accent, fontWeight: '700' },
+    keepFooter: { minHeight: 58, paddingTop: 7, paddingHorizontal: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 12 },
+    keepFooterLeft: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7, paddingLeft: 5 },
+    keepFooterMeta: { flex: 1, ...typography.caption, color: colors.textTertiary },
+    doneButton: { minWidth: 76, minHeight: 40, paddingHorizontal: 16, borderRadius: 20, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+    doneButtonPressed: { opacity: 0.7 },
+    doneButtonDisabled: { opacity: 0.55 },
+    doneButtonText: { ...typography.body, color: colors.text, fontWeight: '700' },
+
     overlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.22)' },
     shareSheet: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '72%', borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface, paddingHorizontal: 18, paddingTop: 8 },
     handle: { width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 8 },
     shareHeader: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10 },
+    shareEyebrow: { ...typography.label, color: colors.accent },
     shareTitle: { ...typography.h2, color: colors.text, marginTop: 2 },
     shareHint: { ...typography.body, color: colors.textSecondary, marginTop: 4, marginBottom: 10 },
     shareList: { gap: 2 },
