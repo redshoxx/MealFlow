@@ -1,8 +1,8 @@
 {
-  "version": "2.3.1",
-  "versionCode": 25,
-  "releasedAt": "2026-08-30T15:00:38Z",
-  "downloadUrl": "https://github.com/redshoxx/MealFlow/releases/download/android-v2.3.1-b176/MealFlow-Android.apk",
-  "size": 107717190,
-  "sha256": "25d47d355d0ebc8f3ca474083a8bbd406f87b8712d354fbd848c35284e4100b3"
+  "version": "2.3.2",
+  "versionCode": 26,
+  "releasedAt": "2026-08-30T15:16:03Z",
+  "downloadUrl": "https://github.com/redshoxx/MealFlow/releases/download/android-v2.3.2-b179/MealFlow-Android.apk",
+  "size": 107716866,
+  "sha256": "dfc630b805c1bf60284aecffd4b55594ffced7d05151cfa4f382a76445fee909"
 }
