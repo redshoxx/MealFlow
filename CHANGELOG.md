@@ -1,3 +1,10 @@
+## 2.3.3
+
+- 4-Wochen-Plan beginnt mit der aktuellen Kalenderwoche; 31.08.–06.09.2026 wird korrekt angezeigt.
+- Neuer fokussierter Einkaufsmodus für die Einkaufsliste mit Lidl-Kategorien und großen Abhak-Zeilen.
+- Neuer Neutral Dark Mode: im dunklen Erscheinungsbild weiße/graue statt grüne Akzente.
+- Theme-Kontraste für helle Akzentfarben verbessert.
+
 # MealFlow Changelog
 
 ## 2.3.1

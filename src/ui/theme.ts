@@ -13,6 +13,7 @@ export const lightColors = {
   accent: '#2F6B45',
   accentSoft: '#E6F1E9',
   accentStrong: '#214F33',
+  onAccent: '#FFFFFF',
   danger: '#B34A4A',
   dangerSoft: '#F8EAEA',
   warning: '#9B6B20',
@@ -31,6 +32,7 @@ export const darkColors = {
   accent: '#79C891',
   accentSoft: '#1D3324',
   accentStrong: '#9AD8AB',
+  onAccent: '#FFFFFF',
   danger: '#F18484',
   dangerSoft: '#3A2020',
   warning: '#E1B86E',
@@ -49,6 +51,7 @@ export const cozyLightColors = {
   accent: '#9A6545',
   accentSoft: '#F0DFD0',
   accentStrong: '#74472F',
+  onAccent: '#FFFFFF',
   danger: '#A94D4D',
   dangerSoft: '#F6E3DE',
   warning: '#9B6B20',
@@ -67,6 +70,7 @@ export const cozyDarkColors = {
   accent: '#D39A73',
   accentSoft: '#3A291F',
   accentStrong: '#E7B48E',
+  onAccent: '#FFFFFF',
   danger: '#F08A84',
   dangerSoft: '#3A211D',
   warning: '#E0B670',
@@ -74,9 +78,33 @@ export const cozyDarkColors = {
   overlay: 'rgba(0, 0, 0, 0.16)',
 };
 
+
+export const neutralDarkColors = {
+  background: '#0D0D0F',
+  surface: '#171719',
+  surfaceMuted: '#232326',
+  text: '#F7F7F8',
+  textSecondary: '#C4C5C9',
+  textTertiary: '#92949A',
+  border: '#303136',
+  accent: '#F0F0F2',
+  accentSoft: '#2B2C30',
+  accentStrong: '#FFFFFF',
+  onAccent: '#111216',
+  danger: '#F18484',
+  dangerSoft: '#3A2020',
+  warning: '#E1B86E',
+  shadow: '#000000',
+  overlay: 'rgba(0, 0, 0, 0.20)',
+};
+
 export const colors = { ...lightColors };
 
-export function setThemePalette(palette: ThemePaletteName, cozy = false) {
+export function setThemePalette(palette: ThemePaletteName, cozy = false, neutralDark = false) {
+  if (palette === 'dark' && neutralDark) {
+    Object.assign(colors, neutralDarkColors);
+    return;
+  }
   if (cozy) {
     Object.assign(colors, palette === 'dark' ? cozyDarkColors : cozyLightColors);
     return;

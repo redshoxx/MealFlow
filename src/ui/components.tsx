@@ -77,7 +77,7 @@ export function ActionButton({
         ? colors.surfaceMuted
         : 'transparent';
   const foreground = variant === 'primary'
-    ? '#FFFFFF'
+    ? colors.onAccent
     : variant === 'danger'
       ? colors.danger
       : variant === 'ghost'
