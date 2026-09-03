@@ -12,6 +12,8 @@ MealFlow ist eine deutschsprachige Haushalts-App für **iPhone, Android und Web*
 
 ## Web-Version
 
+**Produktion:** https://mealflow-blush.vercel.app
+
 Die Browser-App liegt in `App.web.tsx`. Expo/Metro verwendet sie automatisch für die Web-Plattform, während iOS und Android weiterhin `App.tsx` verwenden.
 
 Die Web-Oberfläche ist responsiv:
