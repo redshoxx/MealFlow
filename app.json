@@ -21,6 +21,11 @@
         "REQUEST_INSTALL_PACKAGES"
       ]
     },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/icon.png"
+    },
     "plugins": [
       "expo-sqlite",
       [
