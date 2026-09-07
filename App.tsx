@@ -862,6 +862,7 @@ function ShoppingScreen({
   const [undoItem, setUndoItem] = useState<ShoppingItem | null>(null);
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [shoppingMode, setShoppingMode] = useState(false);
+  const shoppingModeInsets = useSafeAreaInsets();
 
   useSpeechRecognitionEvent('start', () => setRecognizing(true));
   useSpeechRecognitionEvent('end', () => setRecognizing(false));
@@ -1044,7 +1045,7 @@ function ShoppingScreen({
 
 
     <Modal visible={shoppingMode} animationType="slide" presentationStyle="fullScreen" statusBarTranslucent={false} onRequestClose={() => setShoppingMode(false)}>
-      <SafeAreaView style={styles.shoppingModeRoot} edges={['top', 'bottom']}>
+      <View style={[styles.shoppingModeRoot, { paddingTop: Math.max(shoppingModeInsets.top, Platform.OS === 'ios' ? 48 : 28), paddingBottom: Math.max(shoppingModeInsets.bottom, 8) }]}>
         <View style={styles.shoppingModeHeader}>
           <View style={styles.shoppingModeHeaderText}>
             <Text style={styles.shoppingModeEyebrow}>IM GESCHÄFT</Text>
@@ -1066,7 +1067,7 @@ function ShoppingScreen({
             </Pressable>)}</View>
           </View>) : <SurfaceCard><EmptyState icon="cart-check" title="Alles eingekauft" text="Du kannst den Einkaufsmodus jetzt schließen." /></SurfaceCard>}
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </Modal>
 
     <Modal transparent visible={addOpen} animationType="fade" presentationStyle="overFullScreen" onRequestClose={closeProductEditor}>
