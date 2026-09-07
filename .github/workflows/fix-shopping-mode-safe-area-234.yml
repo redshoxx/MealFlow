@@ -34,18 +34,26 @@ jobs:
                   raise SystemExit('shopping mode state anchor not found')
               s = s.replace(anchor, insert, 1)
 
-          old = "      <SafeAreaView style={styles.shoppingModeRoot} edges={['top', 'bottom']}>"
-          new = "      <View style={[styles.shoppingModeRoot, { paddingTop: Math.max(shoppingModeInsets.top, Platform.OS === 'ios' ? 48 : 28), paddingBottom: Math.max(shoppingModeInsets.bottom, 8) }]}>"
-          if old not in s:
+          start_marker = '    <Modal visible={shoppingMode}'
+          end_marker = '    <Modal transparent visible={addOpen}'
+          start = s.find(start_marker)
+          end = s.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit('shopping mode modal block not found')
+
+          block = s[start:end]
+          old_open = "      <SafeAreaView style={styles.shoppingModeRoot} edges={['top', 'bottom']}>"
+          new_open = "      <View style={[styles.shoppingModeRoot, { paddingTop: Math.max(shoppingModeInsets.top, Platform.OS === 'ios' ? 48 : 28), paddingBottom: Math.max(shoppingModeInsets.bottom, 8) }]}>"
+          if old_open not in block:
               raise SystemExit('shopping mode SafeAreaView opening not found')
-          s = s.replace(old, new, 1)
+          block = block.replace(old_open, new_open, 1)
 
-          close_anchor = "        </ScrollView>\n      </SafeAreaView>\n    </Modal>"
-          close_new = "        </ScrollView>\n      </View>\n    </Modal>"
-          if close_anchor not in s:
+          old_close = '      </SafeAreaView>\n    </Modal>'
+          new_close = '      </View>\n    </Modal>'
+          if old_close not in block:
               raise SystemExit('shopping mode SafeAreaView closing not found')
-          s = s.replace(close_anchor, close_new, 1)
-
+          block = block.replace(old_close, new_close, 1)
+          s = s[:start] + block + s[end:]
           p.write_text(s)
 
           app_path = Path('app.json')
