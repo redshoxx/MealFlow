@@ -119,6 +119,39 @@ function groupShopping(items: ShoppingItem[]) {
     .map((label) => ({ label, items: (result.get(label) ?? []).sort((a, b) => a.name.localeCompare(b.name, 'de-AT')) }));
 }
 
+function webShoppingItemFromRealtimeRow(row: any, household: Household): ShoppingItem | null {
+  const id = row?.id ? String(row.id) : '';
+  const name = typeof row?.name === 'string' ? row.name : '';
+  if (!id || !name) return null;
+
+  const addedBy = row?.owner_id ? String(row.owner_id) : null;
+  const completedBy = row?.completed_by ? String(row.completed_by) : null;
+  const memberName = (userId: string | null) => userId
+    ? household.members.find((member) => member.userId === userId)?.displayName ?? 'Mitglied'
+    : null;
+
+  return {
+    id,
+    name,
+    amount: Number(row?.amount ?? 1),
+    unit: String(row?.unit ?? 'Stk.'),
+    done: Boolean(row?.done),
+    completedBy,
+    completedByName: memberName(completedBy),
+    completedAt: row?.completed_at ? String(row.completed_at) : null,
+    addedBy,
+    addedByName: memberName(addedBy),
+  };
+}
+
+function mergeWebRealtimeShoppingItem(current: ShoppingItem[], next: ShoppingItem) {
+  const existingIndex = current.findIndex((item) => item.id === next.id);
+  if (existingIndex >= 0) {
+    return current.map((item, index) => index === existingIndex ? { ...item, ...next } : item);
+  }
+  return [next, ...current];
+}
+
 function applyTheme(preferences: AppPreferences) {
   const dark = preferences.themeMode === 'dark' || (preferences.themeMode === 'system' && Appearance.getColorScheme() === 'dark');
   setThemePalette(dark ? 'dark' : 'light', preferences.cozyMode, preferences.neutralDarkMode);
@@ -493,12 +526,32 @@ function MainWebApp() {
   useEffect(() => {
     if (!household?.id) return;
     const filter = `household_id=eq.${household.id}`;
+    let shoppingReconcileTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const applyShoppingRealtime = (payload: any) => {
+      if (payload?.eventType === 'DELETE') {
+        const deletedId = payload?.old?.id ? String(payload.old.id) : '';
+        if (deletedId) setItems((current) => current.filter((item) => item.id !== deletedId));
+      } else {
+        const next = webShoppingItemFromRealtimeRow(payload?.new, household);
+        if (next) setItems((current) => mergeWebRealtimeShoppingItem(current, next));
+      }
+
+      if (shoppingReconcileTimer) clearTimeout(shoppingReconcileTimer);
+      shoppingReconcileTimer = setTimeout(() => {
+        loadShopping().then(setItems).catch(() => undefined);
+      }, 900);
+    };
+
     const channel = supabase.channel(`mealflow-web-${household.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => loadShopping().then(setItems).catch(() => undefined))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, applyShoppingRealtime)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => loadMealPlan().then((plan) => { setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? '']))); setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? '']))); }).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'household_members', filter }, () => loadHousehold().then(setHousehold).catch(() => undefined))
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      if (shoppingReconcileTimer) clearTimeout(shoppingReconcileTimer);
+      supabase.removeChannel(channel);
+    };
   }, [household?.id]);
 
   useEffect(() => {
