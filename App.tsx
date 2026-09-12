@@ -1055,15 +1055,22 @@ function ShoppingScreen({
         </View>
         <View style={styles.shoppingModeProgressCard}>
           <View style={styles.shoppingModeProgressIcon}><MaterialCommunityIcons name={active.length ? 'cart-outline' : 'check-all'} size={23} color={colors.accent} /></View>
-          <View style={styles.flex1}><Text style={styles.shoppingModeProgressValue}>{active.length ? `${active.length} noch offen` : 'Einkauf erledigt'}</Text><Text style={styles.shoppingModeProgressHint}>{active.length ? 'Produkt antippen, sobald es im Einkaufswagen liegt.' : 'Alle Produkte dieser Liste wurden abgehakt.'}</Text></View>
+          <View style={styles.flex1}>
+            <Text style={styles.shoppingModeProgressValue}>{active.length ? `${active.length} offen` : 'Einkauf erledigt'}</Text>
+            <Text style={styles.shoppingModeProgressHint}>{active.length ? `${completed.length} erledigt · ${active.length + completed.length} Produkte gesamt` : 'Alle Produkte dieser Liste wurden abgehakt.'}</Text>
+            {active.length + completed.length > 0 ? <View style={styles.shoppingModeProgressTrack}><View style={[styles.shoppingModeProgressFill, { width: `${Math.round((completed.length / (active.length + completed.length)) * 100)}%` as `${number}%` }]} /></View> : null}
+          </View>
         </View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.shoppingModeContent}>
           {active.length ? activeGroups.map((group) => <View key={group.key} style={styles.shoppingModeCategory}>
             <View style={styles.shoppingModeCategoryHeader}><Text style={styles.shoppingModeCategoryTitle}>{group.label}</Text><Text style={styles.shoppingModeCategoryCount}>{group.items.length}</Text></View>
-            <View style={styles.shoppingModeList}>{group.items.map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`${item.name} als erledigt markieren`} onPress={() => void toggle(item)} style={({ pressed }) => [styles.shoppingModeRow, pressed && styles.shoppingModeRowPressed]}>
-              <View style={styles.shoppingModeCheck}><MaterialCommunityIcons name="check" size={18} color={colors.onAccent} /></View>
-              <View style={styles.flex1}><Text style={styles.shoppingModeName}>{item.name}</Text><Text style={styles.shoppingModeMeta}>{formatAmount(item.amount)} {item.unit}{item.addedByName ? ` · von ${item.addedByName}` : ''}</Text></View>
-              <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textTertiary} />
+            <View style={styles.shoppingModeList}>{group.items.map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`${item.name} als eingekauft markieren`} onPress={() => void toggle(item)} style={({ pressed }) => [styles.shoppingModeRow, pressed && styles.shoppingModeRowPressed]}>
+              <View style={styles.shoppingModeOpenCheck}><View style={styles.shoppingModeOpenCheckInner} /></View>
+              <View style={styles.flex1}>
+                <Text style={styles.shoppingModeName} numberOfLines={2}>{item.name}</Text>
+                {item.addedByName ? <Text style={styles.shoppingModeMeta}>von {item.addedByName}</Text> : null}
+              </View>
+              <View style={styles.shoppingModeAmountPill}><Text style={styles.shoppingModeAmountText}>{formatAmount(item.amount)} {item.unit}</Text></View>
             </Pressable>)}</View>
           </View>) : <SurfaceCard><EmptyState icon="cart-check" title="Alles eingekauft" text="Du kannst den Einkaufsmodus jetzt schließen." /></SurfaceCard>}
         </ScrollView>
@@ -1524,17 +1531,22 @@ function createStyles() {
   shoppingModeProgressIcon: { width: 46, height: 46, borderRadius: 15, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   shoppingModeProgressValue: { ...typography.title, color: colors.text },
   shoppingModeProgressHint: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  shoppingModeContent: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 34, gap: 18 },
-  shoppingModeCategory: { gap: 7 },
-  shoppingModeCategoryHeader: { paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  shoppingModeCategoryTitle: { ...typography.label, color: colors.textSecondary },
-  shoppingModeCategoryCount: { ...typography.caption, color: colors.textTertiary },
+  shoppingModeProgressTrack: { height: 5, borderRadius: 3, overflow: 'hidden', backgroundColor: colors.surfaceMuted, marginTop: 10 },
+  shoppingModeProgressFill: { height: '100%', borderRadius: 3, backgroundColor: colors.accent },
+  shoppingModeContent: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 34, gap: 20 },
+  shoppingModeCategory: { gap: 8 },
+  shoppingModeCategoryHeader: { paddingHorizontal: 3, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  shoppingModeCategoryTitle: { ...typography.bodyStrong, color: colors.textSecondary },
+  shoppingModeCategoryCount: { minWidth: 26, height: 26, borderRadius: 13, textAlign: 'center', textAlignVertical: 'center', paddingTop: Platform.OS === 'ios' ? 4 : 1, ...typography.caption, color: colors.textSecondary, backgroundColor: colors.surfaceMuted, fontWeight: '800' },
   shoppingModeList: { overflow: 'hidden', borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surface },
-  shoppingModeRow: { minHeight: 72, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  shoppingModeRow: { minHeight: 76, paddingHorizontal: 14, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   shoppingModeRowPressed: { backgroundColor: colors.surfaceMuted },
-  shoppingModeCheck: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  shoppingModeName: { ...typography.bodyStrong, color: colors.text },
-  shoppingModeMeta: { ...typography.caption, color: colors.textTertiary, marginTop: 2 },
+  shoppingModeOpenCheck: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: colors.textTertiary, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
+  shoppingModeOpenCheckInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'transparent' },
+  shoppingModeName: { ...typography.bodyStrong, color: colors.text, lineHeight: 22 },
+  shoppingModeMeta: { ...typography.caption, color: colors.textTertiary, marginTop: 3 },
+  shoppingModeAmountPill: { minHeight: 34, minWidth: 58, paddingHorizontal: 10, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  shoppingModeAmountText: { ...typography.caption, color: colors.textSecondary, fontWeight: '800' },
   shoppingModeLaunch: { minHeight: 42, paddingHorizontal: 12, borderRadius: radius.md, backgroundColor: colors.accentSoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   shoppingModeLaunchPressed: { opacity: 0.72 },
   shoppingModeLaunchDisabled: { backgroundColor: colors.surfaceMuted },
