@@ -272,6 +272,50 @@ function sortShoppingForLidl(items: ShoppingItem[]) {
   });
 }
 
+function shoppingItemFromRealtimeRow(row: any, household: Household): ShoppingItem | null {
+  const id = row?.id ? String(row.id) : '';
+  const name = typeof row?.name === 'string' ? row.name : '';
+  if (!id || !name) return null;
+
+  const addedBy = row?.owner_id ? String(row.owner_id) : null;
+  const completedBy = row?.completed_by ? String(row.completed_by) : null;
+  const memberName = (userId: string | null) => userId
+    ? household.members.find((member) => member.userId === userId)?.displayName ?? 'Mitglied'
+    : null;
+
+  return {
+    id,
+    name,
+    amount: Number(row?.amount ?? 1),
+    unit: String(row?.unit ?? 'Stk.'),
+    done: Boolean(row?.done),
+    completedBy,
+    completedByName: memberName(completedBy),
+    completedAt: row?.completed_at ? String(row.completed_at) : null,
+    addedBy,
+    addedByName: memberName(addedBy),
+  };
+}
+
+function mergeRealtimeShoppingItem(current: ShoppingItem[], next: ShoppingItem) {
+  const existingIndex = current.findIndex((item) => item.id === next.id);
+  if (existingIndex >= 0) {
+    return current.map((item, index) => index === existingIndex ? { ...item, ...next } : item);
+  }
+
+  const optimisticIndex = current.findIndex((item) => (
+    (item.id.startsWith('local-') || item.id.startsWith('undo-') || item.id.startsWith('recipe-'))
+    && normalizeTitle(item.name) === normalizeTitle(next.name)
+    && Number(item.amount) === Number(next.amount)
+    && item.unit === next.unit
+  ));
+  if (optimisticIndex >= 0) {
+    return current.map((item, index) => index === optimisticIndex ? next : item);
+  }
+
+  return [next, ...current];
+}
+
 function lastCookedLabel(entry?: MealHistoryEntry) {
   if (!entry) return null;
   const date = new Date(`${entry.cookedOn}T12:00:00`);
@@ -1381,17 +1425,40 @@ function MainApp() {
     if (!household?.id) return;
     const filter = `household_id=eq.${household.id}`;
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
-    const schedule = (key: string, work: () => void) => {
+    const schedule = (key: string, work: () => void, delay = 180) => {
       const current = timers.get(key);
       if (current) clearTimeout(current);
       const timer = setTimeout(() => {
         timers.delete(key);
         work();
-      }, 180);
+      }, delay);
       timers.set(key, timer);
     };
+
+    const applyShoppingRealtime = (payload: any) => {
+      // Invalidate older list fetches immediately so they cannot overwrite a newer realtime event.
+      shoppingLoadGeneration.current += 1;
+
+      if (payload?.eventType === 'DELETE') {
+        const deletedId = payload?.old?.id ? String(payload.old.id) : '';
+        if (deletedId) setItems((current) => current.filter((item) => item.id !== deletedId));
+      } else {
+        const next = shoppingItemFromRealtimeRow(payload?.new, household);
+        if (next) setItems((current) => mergeRealtimeShoppingItem(current, next));
+      }
+
+      // Reconcile quietly after the instant delta update. This enriches optional profile
+      // names and protects against a missed realtime packet without delaying the UI.
+      schedule('shopping-reconcile', () => {
+        const request = ++shoppingLoadGeneration.current;
+        withTimeout(loadShopping(), 5000, 'Einkaufsliste')
+          .then((next) => { if (request === shoppingLoadGeneration.current) setItems(next); })
+          .catch(() => undefined);
+      }, 900);
+    };
+
     const channel = supabase.channel(`mealflow-household-${household.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, () => schedule('shopping', () => { const request = ++shoppingLoadGeneration.current; withTimeout(loadShopping(), 6000, 'Einkaufsliste').then((next) => { if (request === shoppingLoadGeneration.current) setItems(next); }).catch(() => undefined); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, applyShoppingRealtime)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => schedule('plan', () => { withTimeout(loadMealPlan(), 6000, 'Wochenplan').then((plan) => { setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? '']))); setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? '']))); }).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter }, () => schedule('recipes', () => { withTimeout(loadOwnRecipes(), 5000, 'Rezepte').then(setOwnRecipes).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_history', filter }, () => schedule('history', () => { withTimeout(loadMealHistory(), 5000, 'Verlauf').then(setHistory).catch(() => undefined); }))
