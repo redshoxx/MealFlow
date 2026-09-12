@@ -1065,7 +1065,9 @@ function ShoppingScreen({
           {active.length ? activeGroups.map((group) => <View key={group.key} style={styles.shoppingModeCategory}>
             <View style={styles.shoppingModeCategoryHeader}><Text style={styles.shoppingModeCategoryTitle}>{group.label}</Text><Text style={styles.shoppingModeCategoryCount}>{group.items.length}</Text></View>
             <View style={styles.shoppingModeList}>{group.items.map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`${item.name} als eingekauft markieren`} onPress={() => void toggle(item)} style={({ pressed }) => [styles.shoppingModeRow, pressed && styles.shoppingModeRowPressed]}>
-              <View style={styles.shoppingModeOpenCheck}><View style={styles.shoppingModeOpenCheckInner} /></View>
+              <View style={styles.shoppingModeOpenCheck}>
+                <MaterialCommunityIcons name="circle-outline" size={30} color={colors.textTertiary} />
+              </View>
               <View style={styles.flex1}>
                 <Text style={styles.shoppingModeName} numberOfLines={2}>{item.name}</Text>
                 {item.addedByName ? <Text style={styles.shoppingModeMeta}>von {item.addedByName}</Text> : null}
@@ -1533,16 +1535,16 @@ function createStyles() {
   shoppingModeProgressHint: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   shoppingModeProgressTrack: { height: 5, borderRadius: 3, overflow: 'hidden', backgroundColor: colors.surfaceMuted, marginTop: 10 },
   shoppingModeProgressFill: { height: '100%', borderRadius: 3, backgroundColor: colors.accent },
-  shoppingModeContent: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 34, gap: 20 },
-  shoppingModeCategory: { gap: 8 },
-  shoppingModeCategoryHeader: { paddingHorizontal: 3, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  shoppingModeCategoryTitle: { ...typography.bodyStrong, color: colors.textSecondary },
-  shoppingModeCategoryCount: { minWidth: 26, height: 26, borderRadius: 13, textAlign: 'center', textAlignVertical: 'center', paddingTop: Platform.OS === 'ios' ? 4 : 1, ...typography.caption, color: colors.textSecondary, backgroundColor: colors.surfaceMuted, fontWeight: '800' },
-  shoppingModeList: { overflow: 'hidden', borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surface },
-  shoppingModeRow: { minHeight: 76, paddingHorizontal: 14, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  shoppingModeContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 30, gap: 14 },
+  shoppingModeCategory: { gap: 6 },
+  shoppingModeCategoryHeader: { paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  shoppingModeCategoryTitle: { ...typography.bodyStrong, color: colors.textSecondary, fontSize: 15 },
+  shoppingModeCategoryCount: { minWidth: 24, height: 24, borderRadius: 12, textAlign: 'center', textAlignVertical: 'center', paddingTop: Platform.OS === 'ios' ? 3 : 1, ...typography.caption, color: colors.textSecondary, backgroundColor: colors.surfaceMuted, fontWeight: '800' },
+  shoppingModeList: { overflow: 'hidden', borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surface },
+  shoppingModeRow: { minHeight: 62, paddingHorizontal: 12, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   shoppingModeRowPressed: { backgroundColor: colors.surfaceMuted },
-  shoppingModeOpenCheck: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: colors.textTertiary, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
-  shoppingModeOpenCheckInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'transparent' },
+  shoppingModeOpenCheck: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+  shoppingModeOpenCheckInner: { width: 0, height: 0, backgroundColor: 'transparent' },
   shoppingModeName: { ...typography.bodyStrong, color: colors.text, lineHeight: 22 },
   shoppingModeMeta: { ...typography.caption, color: colors.textTertiary, marginTop: 3 },
   shoppingModeAmountPill: { minHeight: 34, minWidth: 58, paddingHorizontal: 10, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
