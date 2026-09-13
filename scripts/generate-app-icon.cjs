@@ -39,16 +39,6 @@ function encodePng(pixels) {
   return Buffer.concat([signature, chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
 }
 
-function insideRotatedEllipse(x, y, cx, cy, rx, ry, angle) {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  const dx = x - cx;
-  const dy = y - cy;
-  const px = cos * dx + sin * dy;
-  const py = -sin * dx + cos * dy;
-  return (px * px) / (rx * rx) + (py * py) / (ry * ry) <= 1;
-}
-
 function distanceToSegment(px, py, ax, ay, bx, by) {
   const abx = bx - ax;
   const aby = by - ay;
@@ -61,42 +51,51 @@ function distanceToSegment(px, py, ax, ay, bx, by) {
   return Math.hypot(px - cx, py - cy);
 }
 
+function insideEllipse(x, y, cx, cy, rx, ry) {
+  const dx = (x - cx) / rx;
+  const dy = (y - cy) / ry;
+  return dx * dx + dy * dy <= 1;
+}
+
 function mix(a, b, t) {
   return Math.round(a * (1 - t) + b * t);
 }
 
 function makePixels(withBackground) {
   const pixels = Buffer.alloc(SIZE * SIZE * 4);
-  const ivory = [249, 249, 244, 255];
-  const lime = [190, 226, 168, 255];
-  const deepGreen = [25, 68, 44, 255];
-  const midGreen = [47, 107, 69, 255];
+  const deep = [22, 61, 42, 255];
+  const emerald = [43, 103, 68, 255];
+  const ivory = [248, 246, 236, 255];
+  const lime = [191, 227, 165, 255];
 
   for (let y = 0; y < SIZE; y += 1) {
-    const vertical = y / (SIZE - 1);
     for (let x = 0; x < SIZE; x += 1) {
       const i = (y * SIZE + x) * 4;
-      const radial = Math.min(1, Math.hypot(x - 470, y - 420) / 760);
-      const gradientT = Math.min(1, vertical * 0.52 + radial * 0.34);
+      const radial = Math.min(1, Math.hypot(x - 390, y - 350) / 900);
+      const vertical = y / (SIZE - 1);
+      const gradient = Math.min(1, 0.18 + radial * 0.46 + vertical * 0.22);
+
       let color = withBackground
-        ? [mix(deepGreen[0], midGreen[0], gradientT), mix(deepGreen[1], midGreen[1], gradientT), mix(deepGreen[2], midGreen[2], gradientT), 255]
+        ? [
+            mix(deep[0], emerald[0], gradient),
+            mix(deep[1], emerald[1], gradient),
+            mix(deep[2], emerald[2], gradient),
+            255,
+          ]
         : [0, 0, 0, 0];
 
+      // Main plate: a solid, high-contrast disc that remains legible at small sizes.
       const dx = x - 500;
-      const dy = y - 535;
-      const radius = Math.hypot(dx, dy);
+      const dy = y - 530;
+      if (Math.hypot(dx, dy) <= 285) color = ivory;
 
-      // Bold plate ring: clear at small icon sizes and visually tied to food.
-      if (radius >= 242 && radius <= 316) color = ivory;
+      // MealFlow check/flow mark.
+      const checkA = distanceToSegment(x, y, 360, 535, 455, 625);
+      const checkB = distanceToSegment(x, y, 455, 625, 655, 405);
+      if (checkA <= 43 || checkB <= 43) color = deep;
 
-      // Planning/checkmark symbol inside the plate.
-      const checkA = distanceToSegment(x, y, 350, 548, 455, 648);
-      const checkB = distanceToSegment(x, y, 455, 648, 670, 414);
-      if (checkA <= 34 || checkB <= 34) color = ivory;
-
-      // Small leaf accent makes the icon feel fresh without adding clutter.
-      if (insideRotatedEllipse(x, y, 710, 302, 98, 48, -0.66)) color = lime;
-      if (distanceToSegment(x, y, 650, 350, 760, 250) <= 10) color = deepGreen;
+      // A small fresh accent dot/leaf gives the mark its own identity.
+      if (insideEllipse(x, y, 720, 315, 72, 50)) color = lime;
 
       pixels[i] = color[0];
       pixels[i + 1] = color[1];
