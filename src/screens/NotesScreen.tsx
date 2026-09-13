@@ -23,6 +23,8 @@ import {
   setNoteShared,
   stopReceivingSharedNote,
   updateNote,
+  type ChecklistItem,
+  type NoteType,
   type PersonalNote,
 } from '../lib/notes';
 import { supabase } from '../lib/supabase';
@@ -30,7 +32,6 @@ import { EmptyState, IconButton, ScreenHeader, SurfaceCard } from '../ui/compone
 import { colors, radius, spacing, typography } from '../ui/theme';
 
 type NotesFilter = 'all' | 'mine' | 'shared';
-
 type EditorIconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 function updatedLabel(value: string) {
@@ -46,14 +47,31 @@ function previewText(value: string) {
   return clean || 'Noch kein Inhalt';
 }
 
-function fallbackTitle(title: string, content: string) {
+function checklistPreview(note: PersonalNote) {
+  const total = note.checklistItems.length;
+  const done = note.checklistItems.filter((item) => item.done).length;
+  const names = note.checklistItems.slice(0, 3).map((item) => item.text).join(' · ');
+  if (!total) return 'Noch keine Listeneinträge';
+  return `${done} von ${total} erledigt${names ? ` · ${names}` : ''}`;
+}
+
+function fallbackTitle(title: string, content: string, noteType: NoteType, checklistItems: ChecklistItem[]) {
   const clean = title.trim().replace(/\s+/g, ' ');
   if (clean) return clean.slice(0, 120);
+  if (noteType === 'checklist') return (checklistItems.find((item) => item.text.trim())?.text.trim() || 'Liste').slice(0, 120);
   const firstContentLine = content
     .split(/\r?\n/)
     .map((line) => line.trim())
     .find(Boolean);
   return (firstContentLine || 'Notiz').slice(0, 120);
+}
+
+function createChecklistItem(text = ''): ChecklistItem {
+  return {
+    id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    text,
+    done: false,
+  };
 }
 
 function EditorIconButton({
@@ -92,6 +110,8 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
   const [editingNote, setEditingNote] = useState<PersonalNote | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [noteType, setNoteType] = useState<NoteType>('text');
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [shareNote, setShareNote] = useState<PersonalNote | null>(null);
   const [shareBusyUserId, setShareBusyUserId] = useState<string | null>(null);
@@ -139,12 +159,16 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
     setEditingNote(null);
     setTitle('');
     setContent('');
+    setNoteType('text');
+    setChecklistItems([]);
   };
 
   const openNew = () => {
     setEditingNote(null);
     setTitle('');
     setContent('');
+    setNoteType('text');
+    setChecklistItems([]);
     setEditorOpen(true);
     Haptics.selectionAsync().catch(() => undefined);
   };
@@ -153,7 +177,44 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
     setEditingNote(note);
     setTitle(note.title);
     setContent(note.content);
+    setNoteType(note.noteType);
+    setChecklistItems(note.checklistItems);
     setEditorOpen(true);
+  };
+
+  const changeNoteType = (next: NoteType) => {
+    if (next === noteType) return;
+    if (next === 'checklist' && checklistItems.length === 0) {
+      const fromText = content
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => createChecklistItem(line));
+      setChecklistItems(fromText.length ? fromText : [createChecklistItem()]);
+    }
+    if (next === 'text' && !content.trim() && checklistItems.some((item) => item.text.trim())) {
+      setContent(checklistItems.filter((item) => item.text.trim()).map((item) => item.text.trim()).join('\n'));
+    }
+    setNoteType(next);
+    Haptics.selectionAsync().catch(() => undefined);
+  };
+
+  const updateChecklistText = (id: string, text: string) => {
+    setChecklistItems((current) => current.map((item) => item.id === id ? { ...item, text } : item));
+  };
+
+  const toggleChecklistItem = (id: string) => {
+    setChecklistItems((current) => current.map((item) => item.id === id ? { ...item, done: !item.done } : item));
+    Haptics.selectionAsync().catch(() => undefined);
+  };
+
+  const removeChecklistItem = (id: string) => {
+    setChecklistItems((current) => current.filter((item) => item.id !== id));
+  };
+
+  const addChecklistItem = () => {
+    setChecklistItems((current) => [...current, createChecklistItem()]);
+    Haptics.selectionAsync().catch(() => undefined);
   };
 
   const finishEditor = async () => {
@@ -163,17 +224,21 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
       return;
     }
 
-    const hasText = Boolean(title.trim() || content.trim());
+    const cleanItems = checklistItems
+      .map((item) => ({ ...item, text: item.text.trim() }))
+      .filter((item) => item.text.length > 0);
+    const hasText = Boolean(title.trim() || (noteType === 'text' ? content.trim() : cleanItems.length));
     if (!hasText && !editingNote) {
       resetEditor();
       return;
     }
 
-    const resolvedTitle = fallbackTitle(title, content);
+    const resolvedTitle = fallbackTitle(title, content, noteType, cleanItems);
     setSaving(true);
     try {
-      if (editingNote) await updateNote(editingNote.id, { title: resolvedTitle, content });
-      else await createNote({ title: resolvedTitle, content });
+      const payload = { title: resolvedTitle, content, noteType, checklistItems: cleanItems };
+      if (editingNote) await updateNote(editingNote.id, payload);
+      else await createNote(payload);
       await reload(true);
       resetEditor();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -247,16 +312,16 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
     ? `Geteilt von ${editingNote?.ownerName ?? 'Mitglied'}`
     : editingNote
       ? `Bearbeitet ${updatedLabel(editingNote.updatedAt)}`
-      : title.trim() || content.trim()
+      : title.trim() || content.trim() || checklistItems.some((item) => item.text.trim())
         ? 'Noch nicht gespeichert'
-        : 'Neue Notiz';
+        : noteType === 'checklist' ? 'Neue Liste' : 'Neue Notiz';
 
   return <View style={styles.root}>
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.content, { paddingBottom: 110 + insets.bottom }]}>
       <ScreenHeader
         eyebrow="PERSÖNLICH & PRIVAT"
         title="Notizen"
-        subtitle="Deine Gedanken bleiben privat. Einzelne Notizen kannst du gezielt mit Haushaltsmitgliedern teilen."
+        subtitle="Normale Notizen oder Checklisten erstellen und bei Bedarf gezielt mit Haushaltsmitgliedern teilen."
         action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />}
       />
 
@@ -277,18 +342,24 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
 
       {loading ? <View style={styles.loading}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Notizen werden geladen …</Text></View> : null}
 
-      {!loading && filteredNotes.length === 0 ? <SurfaceCard><EmptyState icon="note-text-outline" title={filter === 'shared' ? 'Noch nichts geteilt' : 'Noch keine Notizen'} text={filter === 'shared' ? 'Wenn dir jemand eine Notiz freigibt, erscheint sie hier.' : 'Erstelle deine erste persönliche Notiz.'} actionLabel={filter === 'shared' ? undefined : 'Notiz erstellen'} onAction={filter === 'shared' ? undefined : openNew} /></SurfaceCard> : null}
+      {!loading && filteredNotes.length === 0 ? <SurfaceCard><EmptyState icon="note-text-outline" title={filter === 'shared' ? 'Noch nichts geteilt' : 'Noch keine Notizen'} text={filter === 'shared' ? 'Wenn dir jemand eine Notiz oder Liste freigibt, erscheint sie hier.' : 'Erstelle deine erste persönliche Notiz oder Checkliste.'} actionLabel={filter === 'shared' ? undefined : 'Notiz erstellen'} onAction={filter === 'shared' ? undefined : openNew} /></SurfaceCard> : null}
 
       <View style={styles.noteList}>{filteredNotes.map((note) => {
         const shareText = note.isOwner
           ? note.sharedWith.length ? `Geteilt mit ${note.sharedWith.map((entry) => entry.displayName).join(', ')}` : 'Nur für dich'
           : `Geteilt von ${note.ownerName}`;
+        const preview = note.noteType === 'checklist' ? checklistPreview(note) : previewText(note.content);
         return <Pressable key={note.id} onPress={() => openNote(note)} style={({ pressed }) => [styles.noteCard, pressed && styles.noteCardPressed]}>
-          <View style={[styles.noteIcon, !note.isOwner && styles.noteIconShared]}><MaterialCommunityIcons name={note.isOwner ? 'note-text-outline' : 'account-arrow-left-outline'} size={22} color={colors.accent} /></View>
+          <View style={[styles.noteIcon, !note.isOwner && styles.noteIconShared]}>
+            <MaterialCommunityIcons name={note.noteType === 'checklist' ? 'format-list-checks' : note.isOwner ? 'note-text-outline' : 'account-arrow-left-outline'} size={22} color={colors.accent} />
+          </View>
           <View style={styles.flex1}>
             <View style={styles.noteTitleRow}><Text style={styles.noteTitle} numberOfLines={1}>{note.title}</Text><Text style={styles.noteDate}>{updatedLabel(note.updatedAt)}</Text></View>
-            <Text style={styles.notePreview} numberOfLines={2}>{previewText(note.content)}</Text>
-            <View style={styles.noteMetaRow}><MaterialCommunityIcons name={note.isOwner && note.sharedWith.length ? 'account-multiple-outline' : note.isOwner ? 'lock-outline' : 'share-variant-outline'} size={14} color={colors.textTertiary} /><Text style={styles.noteMeta} numberOfLines={1}>{shareText}</Text></View>
+            <Text style={styles.notePreview} numberOfLines={2}>{preview}</Text>
+            <View style={styles.noteMetaRow}>
+              <MaterialCommunityIcons name={note.isOwner && note.sharedWith.length ? 'account-multiple-outline' : note.isOwner ? 'lock-outline' : 'share-variant-outline'} size={14} color={colors.textTertiary} />
+              <Text style={styles.noteMeta} numberOfLines={1}>{note.noteType === 'checklist' ? `Liste · ${shareText}` : shareText}</Text>
+            </View>
           </View>
           {note.isOwner ? <Pressable hitSlop={8} onPress={(event) => { event.stopPropagation(); setShareNote(note); }} style={styles.shareQuickButton}><MaterialCommunityIcons name="share-variant-outline" size={18} color={colors.accent} /></Pressable> : <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textTertiary} />}
         </Pressable>;
@@ -318,17 +389,30 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
             contentContainerStyle={styles.editorContent}
           >
             {editorReadOnly ? <View style={styles.readOnlyBanner}><MaterialCommunityIcons name="account-eye-outline" size={18} color={colors.accent} /><Text style={styles.readOnlyBannerText}>{editorMeta} · Nur lesen</Text></View> : null}
+
+            {!editorReadOnly ? <View style={styles.typeSwitch}>
+              <Pressable onPress={() => changeNoteType('text')} style={[styles.typeOption, noteType === 'text' && styles.typeOptionActive]}>
+                <MaterialCommunityIcons name="note-text-outline" size={18} color={noteType === 'text' ? colors.accent : colors.textSecondary} />
+                <Text style={[styles.typeOptionText, noteType === 'text' && styles.typeOptionTextActive]}>Notiz</Text>
+              </Pressable>
+              <Pressable onPress={() => changeNoteType('checklist')} style={[styles.typeOption, noteType === 'checklist' && styles.typeOptionActive]}>
+                <MaterialCommunityIcons name="format-list-checks" size={18} color={noteType === 'checklist' ? colors.accent : colors.textSecondary} />
+                <Text style={[styles.typeOptionText, noteType === 'checklist' && styles.typeOptionTextActive]}>Liste</Text>
+              </Pressable>
+            </View> : null}
+
             <TextInput
               value={title}
               onChangeText={setTitle}
               editable={!editorReadOnly}
               maxLength={120}
               multiline
-              placeholder="Titel"
+              placeholder={noteType === 'checklist' ? 'Listentitel' : 'Titel'}
               placeholderTextColor={colors.textTertiary}
               style={[styles.keepTitleInput, editorReadOnly && styles.readOnlyText]}
             />
-            <TextInput
+
+            {noteType === 'text' ? <TextInput
               value={content}
               onChangeText={setContent}
               editable={!editorReadOnly}
@@ -339,12 +423,45 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
               placeholder="Notiz schreiben"
               placeholderTextColor={colors.textTertiary}
               style={[styles.keepContentInput, editorReadOnly && styles.readOnlyText]}
-            />
+            /> : <View style={styles.checklistEditor}>
+              {checklistItems.map((item) => <View key={item.id} style={styles.checklistRow}>
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: item.done }}
+                  disabled={editorReadOnly}
+                  hitSlop={7}
+                  onPress={() => toggleChecklistItem(item.id)}
+                  style={styles.checkCircleButton}
+                >
+                  <MaterialCommunityIcons name={item.done ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline'} size={25} color={item.done ? colors.accent : colors.textTertiary} />
+                </Pressable>
+                <TextInput
+                  value={item.text}
+                  onChangeText={(value) => updateChecklistText(item.id, value)}
+                  editable={!editorReadOnly}
+                  maxLength={300}
+                  multiline
+                  placeholder="Listeneintrag"
+                  placeholderTextColor={colors.textTertiary}
+                  style={[styles.checklistInput, item.done && styles.checklistInputDone, editorReadOnly && styles.readOnlyText]}
+                />
+                {!editorReadOnly ? <Pressable accessibilityLabel="Listeneintrag entfernen" hitSlop={7} onPress={() => removeChecklistItem(item.id)} style={styles.removeItemButton}>
+                  <MaterialCommunityIcons name="close" size={19} color={colors.textTertiary} />
+                </Pressable> : null}
+              </View>)}
+
+              {!editorReadOnly ? <Pressable onPress={addChecklistItem} style={({ pressed }) => [styles.addItemButton, pressed && styles.addItemButtonPressed]}>
+                <MaterialCommunityIcons name="plus" size={21} color={colors.accent} />
+                <Text style={styles.addItemText}>Listeneintrag hinzufügen</Text>
+              </Pressable> : null}
+
+              {editorReadOnly && checklistItems.length === 0 ? <Text style={styles.emptyChecklistText}>Diese Liste enthält noch keine Einträge.</Text> : null}
+            </View>}
           </ScrollView>
 
           <View style={[styles.keepFooter, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <View style={styles.keepFooterLeft}>
-              <MaterialCommunityIcons name={editorReadOnly ? 'share-variant-outline' : 'lock-outline'} size={17} color={colors.textTertiary} />
+              <MaterialCommunityIcons name={noteType === 'checklist' ? 'format-list-checks' : editorReadOnly ? 'share-variant-outline' : 'lock-outline'} size={17} color={colors.textTertiary} />
               <Text style={styles.keepFooterMeta} numberOfLines={1}>{editorMeta}</Text>
             </View>
             <Pressable
@@ -365,7 +482,7 @@ export function NotesScreen({ household, onSettings }: { household: Household; o
       <View style={[styles.shareSheet, { paddingBottom: Math.max(insets.bottom, 18) }]}>
         <View style={styles.handle} />
         <View style={styles.shareHeader}><View style={styles.flex1}><Text style={styles.shareEyebrow}>NOTIZ TEILEN</Text><Text style={styles.shareTitle} numberOfLines={1}>{shareNote?.title}</Text></View><IconButton icon="close" onPress={() => setShareNote(null)} accessibilityLabel="Teilen schließen" /></View>
-        <Text style={styles.shareHint}>Nur ausgewählte Personen können diese Notiz lesen. Bearbeiten kann weiterhin nur der Besitzer.</Text>
+        <Text style={styles.shareHint}>Nur ausgewählte Personen können diese Notiz oder Liste lesen. Bearbeiten kann weiterhin nur der Besitzer.</Text>
         <View style={styles.shareList}>{shareCandidates.map((member) => {
           const shared = Boolean(shareNote?.sharedWith.some((entry) => entry.userId === member.userId));
           const busy = shareBusyUserId === member.userId;
@@ -420,11 +537,26 @@ function createStyles() {
     editorIconButtonDisabled: { opacity: 0.4 },
     editorSaving: { width: 36, alignItems: 'center', justifyContent: 'center' },
     editorContent: { flexGrow: 1, paddingHorizontal: 22, paddingTop: 8, paddingBottom: 48 },
+    typeSwitch: { alignSelf: 'flex-start', flexDirection: 'row', padding: 3, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, marginBottom: 12 },
+    typeOption: { minHeight: 36, borderRadius: radius.pill, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 6 },
+    typeOptionActive: { backgroundColor: colors.surface },
+    typeOptionText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
+    typeOptionTextActive: { color: colors.accent },
     keepTitleInput: { paddingHorizontal: 0, paddingVertical: 8, fontSize: 27, lineHeight: 34, fontWeight: '600', color: colors.text, minHeight: 54 },
     keepContentInput: { paddingHorizontal: 0, paddingTop: 8, paddingBottom: 28, minHeight: 360, fontSize: 18, lineHeight: 27, color: colors.text },
     readOnlyText: { color: colors.textSecondary },
     readOnlyBanner: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, minHeight: 34, borderRadius: radius.pill, backgroundColor: colors.accentSoft, marginBottom: 10 },
     readOnlyBannerText: { ...typography.caption, color: colors.accent, fontWeight: '700' },
+    checklistEditor: { paddingTop: 6, gap: 3, minHeight: 340 },
+    checklistRow: { minHeight: 48, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+    checkCircleButton: { width: 30, height: 42, alignItems: 'center', justifyContent: 'center' },
+    checklistInput: { flex: 1, minHeight: 42, paddingVertical: 8, paddingHorizontal: 0, fontSize: 18, lineHeight: 25, color: colors.text },
+    checklistInputDone: { color: colors.textTertiary, textDecorationLine: 'line-through' },
+    removeItemButton: { width: 34, height: 42, alignItems: 'center', justifyContent: 'center' },
+    addItemButton: { alignSelf: 'flex-start', minHeight: 42, paddingRight: 12, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+    addItemButtonPressed: { opacity: 0.65 },
+    addItemText: { ...typography.body, color: colors.accent, fontWeight: '700' },
+    emptyChecklistText: { ...typography.body, color: colors.textTertiary, paddingVertical: 16 },
     keepFooter: { minHeight: 58, paddingTop: 7, paddingHorizontal: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: 12 },
     keepFooterLeft: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7, paddingLeft: 5 },
     keepFooterMeta: { flex: 1, ...typography.caption, color: colors.textTertiary },
