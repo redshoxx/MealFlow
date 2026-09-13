@@ -5,12 +5,22 @@ export type NoteShare = {
   displayName: string;
 };
 
+export type NoteType = 'text' | 'checklist';
+
+export type ChecklistItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
 export type PersonalNote = {
   id: string;
   ownerId: string;
   ownerName: string;
   title: string;
   content: string;
+  noteType: NoteType;
+  checklistItems: ChecklistItem[];
   createdAt: string;
   updatedAt: string;
   isOwner: boolean;
@@ -22,6 +32,8 @@ type NoteRow = {
   owner_id: string;
   title: string;
   content: string;
+  note_type: string | null;
+  checklist_items: unknown;
   created_at: string;
   updated_at: string;
 };
@@ -60,11 +72,27 @@ function cleanContent(value: string) {
   return value.slice(0, 12000);
 }
 
+function cleanChecklistItems(value: unknown): ChecklistItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, 150)
+    .map((item: any, index) => ({
+      id: String(item?.id || `item-${index + 1}`).slice(0, 120),
+      text: String(item?.text || '').trim().slice(0, 300),
+      done: Boolean(item?.done),
+    }))
+    .filter((item) => item.text.length > 0);
+}
+
+function resolveNoteType(value: unknown): NoteType {
+  return value === 'checklist' ? 'checklist' : 'text';
+}
+
 export async function loadNotes(): Promise<PersonalNote[]> {
   const user = await requireUser();
   const { data, error } = await requireCloud()
     .from('user_notes')
-    .select('id,owner_id,title,content,created_at,updated_at')
+    .select('id,owner_id,title,content,note_type,checklist_items,created_at,updated_at')
     .order('updated_at', { ascending: false })
     .limit(300);
   if (error) throw error;
@@ -98,6 +126,8 @@ export async function loadNotes(): Promise<PersonalNote[]> {
     ownerName: names.get(row.owner_id) ?? (row.owner_id === user.id ? 'Du' : 'Mitglied'),
     title: String(row.title),
     content: String(row.content ?? ''),
+    noteType: resolveNoteType(row.note_type),
+    checklistItems: cleanChecklistItems(row.checklist_items),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
     isOwner: row.owner_id === user.id,
@@ -105,25 +135,50 @@ export async function loadNotes(): Promise<PersonalNote[]> {
   }));
 }
 
-export async function createNote(input: { title: string; content: string }): Promise<string> {
+export async function createNote(input: {
+  title: string;
+  content: string;
+  noteType?: NoteType;
+  checklistItems?: ChecklistItem[];
+}): Promise<string> {
   const user = await requireUser();
   const title = cleanTitle(input.title);
   if (!title) throw new Error('Bitte gib der Notiz einen Titel.');
+  const noteType = resolveNoteType(input.noteType);
+  const checklistItems = noteType === 'checklist' ? cleanChecklistItems(input.checklistItems ?? []) : [];
   const { data, error } = await requireCloud()
     .from('user_notes')
-    .insert({ owner_id: user.id, title, content: cleanContent(input.content) })
+    .insert({
+      owner_id: user.id,
+      title,
+      content: noteType === 'text' ? cleanContent(input.content) : '',
+      note_type: noteType,
+      checklist_items: checklistItems,
+    })
     .select('id')
     .single();
   if (error) throw error;
   return String(data.id);
 }
 
-export async function updateNote(noteId: string, input: { title: string; content: string }) {
+export async function updateNote(noteId: string, input: {
+  title: string;
+  content: string;
+  noteType?: NoteType;
+  checklistItems?: ChecklistItem[];
+}) {
   const title = cleanTitle(input.title);
   if (!title) throw new Error('Bitte gib der Notiz einen Titel.');
+  const noteType = resolveNoteType(input.noteType);
+  const checklistItems = noteType === 'checklist' ? cleanChecklistItems(input.checklistItems ?? []) : [];
   const { error } = await requireCloud()
     .from('user_notes')
-    .update({ title, content: cleanContent(input.content) })
+    .update({
+      title,
+      content: noteType === 'text' ? cleanContent(input.content) : '',
+      note_type: noteType,
+      checklist_items: checklistItems,
+    })
     .eq('id', noteId);
   if (error) throw error;
 }
