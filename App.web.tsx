@@ -176,6 +176,18 @@ function IconAction({ icon, onPress, danger = false, label }: { icon: React.Comp
   </Pressable>;
 }
 
+function WebBrandMark({ size = 58 }: { size?: number }) {
+  const plateSize = Math.round(size * 0.62);
+  const checkSize = Math.round(size * 0.30);
+  const accentSize = Math.max(9, Math.round(size * 0.17));
+  return <View style={[styles.webBrandShell, { width: size, height: size, borderRadius: Math.round(size * 0.29) }]}>
+    <View style={{ width: plateSize, height: plateSize, borderRadius: Math.round(plateSize / 2), backgroundColor: '#F7F5EC', alignItems: 'center', justifyContent: 'center' }}>
+      <MaterialCommunityIcons name="check-bold" size={checkSize} color="#214F33" />
+    </View>
+    <View style={[styles.webBrandAccent, { width: accentSize, height: accentSize, borderRadius: Math.round(accentSize / 2), right: Math.round(size * 0.10), top: Math.round(size * 0.09) }]} />
+  </View>;
+}
+
 function PageHeader({ eyebrow, title, subtitle, onSettings }: { eyebrow?: string; title: string; subtitle: string; onSettings: () => void }) {
   return <View style={styles.pageHeader}>
     <View style={styles.flex1}>
@@ -219,7 +231,7 @@ function AuthScreen() {
 
   return <View style={styles.authRoot}>
     <View style={styles.authLeft}>
-      <View style={styles.brandMark}><MaterialCommunityIcons name="silverware-fork-knife" size={28} color={colors.onAccent} /></View>
+      <WebBrandMark size={62} />
       <Text style={styles.authBrand}>MealFlow</Text>
       <Text style={styles.authHero}>Gemeinsam planen. Einfach einkaufen.</Text>
       <Text style={styles.authCopy}>Die Web-Version synchronisiert Haushalt, 4-Wochen-Plan, Einkauf und Notizen direkt mit deiner iPhone- und Android-App.</Text>
@@ -242,34 +254,63 @@ function AuthScreen() {
 }
 
 function HomeScreen({ household, items, meals, saskiaMeals, onNavigate, onSettings }: { household: Household; items: ShoppingItem[]; meals: Record<string, string>; saskiaMeals: Record<string, string>; onNavigate: (tab: Tab) => void; onSettings: () => void }) {
-  const today = isoDate(new Date());
+  const now = new Date();
+  const today = isoDate(now);
+  const hour = now.getHours();
+  const greeting = hour < 11 ? 'Guten Morgen' : hour < 17 ? 'Guten Tag' : 'Guten Abend';
+  const name = household.myDisplayName?.trim();
   const openItems = items.filter((item) => !item.done).length;
-  const monthDays = [0, 1, 2, 3].flatMap(currentWeek);
-  const planned = monthDays.reduce((total, day) => total + (meals[day.iso] ? 1 : 0) + (saskiaMeals[day.iso] ? 1 : 0), 0);
-  const date = new Date().toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+  const doneItems = items.length - openItems;
+  const nextSeven = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(now);
+    date.setDate(now.getDate() + index);
+    return isoDate(date);
+  });
+  const plannedNextSeven = nextSeven.reduce((total, iso) => total + (meals[iso] ? 1 : 0) + (saskiaMeals[iso] ? 1 : 0), 0);
+  const tomorrowDate = new Date(now);
+  tomorrowDate.setDate(now.getDate() + 1);
+  const tomorrow = isoDate(tomorrowDate);
+  const date = now.toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 
   return <ScrollView contentContainerStyle={styles.pageContent}>
-    <PageHeader eyebrow={`${date} · ${household.name}`} title="Heute" subtitle={`Alles Wichtige aus deinem Haushalt auf einen Blick. ${household.members.length} Mitglieder sind verbunden.`} onSettings={onSettings} />
-    <View style={styles.heroGrid}>
-      <View style={[styles.card, styles.heroCard]}>
-        <View style={styles.cardIcon}><MaterialCommunityIcons name="silverware-fork-knife" size={24} color={colors.accent} /></View>
-        <Text style={styles.cardEyebrow}>ABENDESSEN</Text>
-        <Text style={styles.heroMeal}>{meals[today] || 'Noch nichts geplant'}</Text>
-        <Text style={styles.cardCopy}>{meals[today] ? 'Gemeinsam geplantes Abendessen für heute.' : 'Öffne den 4-Wochen-Plan und plane das heutige Essen.'}</Text>
-        <WebButton label="Zum Plan" icon="calendar-arrow-right" variant="secondary" onPress={() => onNavigate('woche')} />
+    <PageHeader eyebrow={`${date} · ${household.name}`} title={`${greeting}${name ? `, ${name}` : ''}`} subtitle="Dein MealFlow-Tag – Essen, Einkauf und Haushalt kompakt zusammengefasst." onSettings={onSettings} />
+
+    <View style={[styles.card, styles.todayWebHero]}>
+      <View style={styles.todayWebHeroTop}>
+        <WebBrandMark size={58} />
+        <View style={styles.flex1}>
+          <Text style={styles.cardEyebrow}>HEUTE IM BLICK</Text>
+          <Text style={styles.todayWebHeroTitle}>Was steht heute an?</Text>
+        </View>
       </View>
-      <View style={[styles.card, styles.heroCard]}>
-        <View style={styles.cardIcon}><MaterialCommunityIcons name="account-heart-outline" size={24} color={colors.accent} /></View>
-        <Text style={styles.cardEyebrow}>FÜR SASKIA</Text>
-        <Text style={styles.heroMeal}>{saskiaMeals[today] || 'Noch nichts geplant'}</Text>
-        <Text style={styles.cardCopy}>Der separate Essensplatz bleibt im ganzen Monat unabhängig vom normalen Abendessen.</Text>
-        <WebButton label="Für Saskia planen" icon="calendar-heart" variant="secondary" onPress={() => onNavigate('woche')} />
+      <View style={styles.todayWebMealGrid}>
+        <View style={styles.todayWebMealBlock}>
+          <Text style={styles.cardEyebrow}>ABENDESSEN</Text>
+          <Text style={styles.heroMeal}>{meals[today] || 'Noch nichts geplant'}</Text>
+          <Text style={styles.cardCopy}>{meals[today] ? 'Gemeinsam geplantes Abendessen für heute.' : 'Plane das heutige Abendessen im 4-Wochen-Plan.'}</Text>
+        </View>
+        <View style={[styles.todayWebMealBlock, styles.todayWebMealBlockAccent]}>
+          <Text style={styles.cardEyebrow}>FÜR SASKIA</Text>
+          <Text style={styles.heroMeal}>{saskiaMeals[today] || 'Noch nichts geplant'}</Text>
+          <Text style={styles.cardCopy}>Der eigene Essensplatz für Saskia bleibt separat planbar.</Text>
+        </View>
+      </View>
+      <View style={styles.todayWebActions}>
+        <WebButton label="4-Wochen-Plan öffnen" icon="calendar-arrow-right" onPress={() => onNavigate('woche')} />
+        <WebButton label="Einkauf öffnen" icon="cart-outline" variant="secondary" onPress={() => onNavigate('einkauf')} />
       </View>
     </View>
+
     <View style={styles.metricGrid}>
-      <Pressable onPress={() => onNavigate('woche')} style={[styles.card, styles.metricCard]}><MaterialCommunityIcons name="calendar-check-outline" size={25} color={colors.accent} /><Text style={styles.metricValue}>{planned}/56</Text><Text style={styles.metricLabel}>Gerichte in 4 Wochen geplant</Text></Pressable>
-      <Pressable onPress={() => onNavigate('einkauf')} style={[styles.card, styles.metricCard]}><MaterialCommunityIcons name="cart-outline" size={25} color={colors.accent} /><Text style={styles.metricValue}>{openItems}</Text><Text style={styles.metricLabel}>Produkte noch offen</Text></Pressable>
-      <Pressable onPress={() => onNavigate('notizen')} style={[styles.card, styles.metricCard]}><MaterialCommunityIcons name="note-text-outline" size={25} color={colors.accent} /><Text style={styles.metricValue}>Privat</Text><Text style={styles.metricLabel}>Notizen & einzelne Freigaben</Text></Pressable>
+      <Pressable onPress={() => onNavigate('einkauf')} style={[styles.card, styles.metricCard]}><MaterialCommunityIcons name="cart-outline" size={25} color={colors.accent} /><Text style={styles.metricValue}>{openItems}</Text><Text style={styles.metricLabel}>Produkte noch offen{doneItems ? ` · ${doneItems} erledigt` : ''}</Text></Pressable>
+      <Pressable onPress={() => onNavigate('woche')} style={[styles.card, styles.metricCard]}><MaterialCommunityIcons name="calendar-check-outline" size={25} color={colors.accent} /><Text style={styles.metricValue}>{plannedNextSeven}/14</Text><Text style={styles.metricLabel}>Essensplätze der nächsten 7 Tage geplant</Text></Pressable>
+      <View style={[styles.card, styles.metricCard]}><MaterialCommunityIcons name="account-group-outline" size={25} color={colors.accent} /><Text style={styles.metricValue}>{household.members.length}</Text><Text style={styles.metricLabel}>{household.members.length === 1 ? 'Mitglied im Haushalt' : 'Mitglieder im Haushalt'}</Text></View>
+    </View>
+
+    <View style={[styles.card, styles.tomorrowWebCard]}>
+      <View style={styles.tomorrowWebDate}><Text style={styles.tomorrowWebDay}>{tomorrowDate.toLocaleDateString('de-AT', { day: '2-digit' })}</Text><Text style={styles.tomorrowWebMonth}>{tomorrowDate.toLocaleDateString('de-AT', { month: 'short' }).replace('.', '').toUpperCase()}</Text></View>
+      <View style={styles.flex1}><Text style={styles.cardEyebrow}>MORGEN</Text><Text style={styles.tomorrowWebMeal}>{meals[tomorrow] || 'Noch kein Abendessen geplant'}</Text>{saskiaMeals[tomorrow] ? <Text style={styles.cardCopy}>Für Saskia: {saskiaMeals[tomorrow]}</Text> : null}</View>
+      <WebButton label="Planen" icon="calendar-plus" variant="secondary" onPress={() => onNavigate('woche')} />
     </View>
   </ScrollView>;
 }
@@ -473,7 +514,7 @@ function SettingsModal({ visible, household, preferences, onClose, onPreferences
 
 function Sidebar({ tab, onTab, household, onSettings }: { tab: Tab; onTab: (tab: Tab) => void; household: Household; onSettings: () => void }) {
   return <View style={styles.sidebar}>
-    <View style={styles.sidebarBrand}><View style={styles.brandMarkSmall}><MaterialCommunityIcons name="silverware-fork-knife" size={22} color={colors.onAccent} /></View><View><Text style={styles.sidebarBrandName}>MealFlow</Text><Text style={styles.sidebarBrandMeta}>Web</Text></View></View>
+    <View style={styles.sidebarBrand}><WebBrandMark size={42} /><View><Text style={styles.sidebarBrandName}>MealFlow</Text><Text style={styles.sidebarBrandMeta}>Web</Text></View></View>
     <View style={styles.navList}>{NAV.map((item) => <Pressable key={item.key} onPress={() => onTab(item.key)} style={[styles.navItem, tab === item.key && styles.navItemActive]}><MaterialCommunityIcons name={item.icon} size={21} color={tab === item.key ? colors.accent : colors.textSecondary} /><Text style={[styles.navText, tab === item.key && styles.navTextActive]}>{item.label}</Text></Pressable>)}</View>
     <View style={styles.sidebarBottom}><Pressable onPress={onSettings} style={styles.householdButton}><View style={styles.avatar}><Text style={styles.avatarText}>{household.name.slice(0, 1).toUpperCase()}</Text></View><View style={styles.flex1}><Text numberOfLines={1} style={styles.householdName}>{household.name}</Text><Text style={styles.sidebarBrandMeta}>{household.myDisplayName}</Text></View><MaterialCommunityIcons name="cog-outline" size={20} color={colors.textSecondary} /></Pressable></View>
   </View>;
@@ -574,7 +615,7 @@ function MainWebApp() {
     savePreferences(prefs).catch(() => undefined);
   };
 
-  if (loading) return <View style={styles.loadingRoot}><View style={styles.brandMark}><MaterialCommunityIcons name="silverware-fork-knife" size={28} color={colors.onAccent} /></View><ActivityIndicator size="large" color={colors.accent} /><Text style={styles.loadingTitle}>MealFlow Web wird geladen</Text><Text style={styles.loadingCopy}>Haushalt, Einkauf und 4-Wochen-Plan werden synchronisiert …</Text></View>;
+  if (loading) return <View style={styles.loadingRoot}><WebBrandMark size={82} /><Text style={styles.loadingTitle}>MealFlow wird vorbereitet</Text><Text style={styles.loadingCopy}>Haushalt, Einkauf und 4-Wochen-Plan werden synchronisiert …</Text><View style={styles.webLoadingTrack}><View style={styles.webLoadingFill} /></View><Text style={styles.webLoadingMeta}>MealFlow {APP_VERSION}</Text></View>;
   if (error || !household) return <View style={styles.loadingRoot}><MaterialCommunityIcons name="cloud-alert-outline" size={42} color={colors.danger} /><Text style={styles.loadingTitle}>MealFlow konnte nicht starten</Text><Text style={styles.loadingCopy}>{error || 'Kein aktiver Haushalt gefunden.'}</Text><WebButton label="Erneut versuchen" onPress={() => { setLoading(true); void refresh(); }} /></View>;
 
   const content = tab === 'heute'
@@ -602,7 +643,7 @@ function Root() {
     const { data } = supabase.auth.onAuthStateChange((_event, session) => { if (!session) clearHouseholdCache(); setAuthenticated(Boolean(session)); setChecking(false); });
     return () => data.subscription.unsubscribe();
   }, []);
-  if (checking) return <View style={styles.loadingRoot}><ActivityIndicator size="large" color={colors.accent} /><Text style={styles.loadingCopy}>Anmeldung wird geprüft …</Text></View>;
+  if (checking) return <View style={styles.loadingRoot}><WebBrandMark size={74} /><Text style={styles.loadingTitle}>MealFlow</Text><Text style={styles.loadingCopy}>Anmeldung wird geprüft …</Text><View style={styles.webLoadingTrack}><View style={styles.webLoadingFill} /></View></View>;
   if (!isCloudConfigured) return <View style={styles.loadingRoot}><Text style={styles.loadingTitle}>Cloud-Verbindung fehlt</Text></View>;
   return authenticated ? <MainWebApp /> : <AuthScreen />;
 }
@@ -638,6 +679,8 @@ function createStyles() {
     eyebrow: { ...typography.label, color: colors.accent, textTransform: 'uppercase' },
     pageTitle: { fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -0.7, color: colors.text, marginTop: 4 },
     pageSubtitle: { ...typography.body, color: colors.textSecondary, maxWidth: 720, marginTop: 4 },
+    webBrandShell: { backgroundColor: '#173F2C', alignItems: 'center', justifyContent: 'center' },
+    webBrandAccent: { position: 'absolute', backgroundColor: '#BFE3A5' },
     heroGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
     card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
     heroCard: { flexGrow: 1, flexBasis: 420, minWidth: 280, padding: 22, gap: 10 },
@@ -645,10 +688,22 @@ function createStyles() {
     cardEyebrow: { ...typography.label, color: colors.accent },
     heroMeal: { fontSize: 25, lineHeight: 31, fontWeight: '800', color: colors.text },
     cardCopy: { ...typography.body, color: colors.textSecondary },
+    todayWebHero: { padding: 22, gap: 18 },
+    todayWebHeroTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    todayWebHeroTitle: { ...typography.h2, color: colors.text, marginTop: 3 },
+    todayWebMealGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+    todayWebMealBlock: { flexGrow: 1, flexBasis: 390, minWidth: 270, minHeight: 150, borderRadius: radius.lg, backgroundColor: colors.surfaceMuted, padding: 18, gap: 8 },
+    todayWebMealBlockAccent: { backgroundColor: colors.accentSoft },
+    todayWebActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
     metricCard: { flexGrow: 1, flexBasis: 230, minWidth: 190, padding: 18, gap: 8 },
     metricValue: { fontSize: 27, lineHeight: 31, fontWeight: '800', color: colors.text },
     metricLabel: { ...typography.caption, color: colors.textSecondary },
+    tomorrowWebCard: { padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14, flexWrap: 'wrap' },
+    tomorrowWebDate: { width: 58, height: 64, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+    tomorrowWebDay: { fontSize: 24, lineHeight: 27, fontWeight: '800', color: colors.text },
+    tomorrowWebMonth: { ...typography.caption, color: colors.accent, fontWeight: '800' },
+    tomorrowWebMeal: { ...typography.title, color: colors.text, marginTop: 3 },
     weekTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     weekTab: { minWidth: 150, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: 13 },
     weekTabActive: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
@@ -752,8 +807,11 @@ function createStyles() {
     authSwitch: { ...typography.caption, color: colors.accent, textAlign: 'center', paddingTop: 4 },
     errorText: { ...typography.caption, color: colors.danger },
     loadingRoot: { flex: 1, minHeight: '100vh' as any, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', padding: 30, gap: 12 },
-    loadingTitle: { ...typography.h2, color: colors.text, textAlign: 'center' },
+    loadingTitle: { ...typography.h2, color: colors.text, textAlign: 'center', marginTop: 8 },
     loadingCopy: { ...typography.body, color: colors.textSecondary, textAlign: 'center', maxWidth: 520 },
+    webLoadingTrack: { width: 260, height: 7, borderRadius: 4, backgroundColor: colors.surfaceMuted, overflow: 'hidden', marginTop: 8 },
+    webLoadingFill: { width: '72%', height: '100%', borderRadius: 4, backgroundColor: colors.accent },
+    webLoadingMeta: { ...typography.caption, color: colors.textTertiary },
   });
 }
 
