@@ -1,3 +1,11 @@
+## 2.3.9
+
+- Einkaufsliste auf iPhone, Android und Web sofort lokal aktualisieren (Hinzufügen, Bearbeiten, Abhaken, Löschen).
+- Supabase-Realtime-Ereignisse direkt in die Liste übernehmen, ohne künstliche Verzögerung oder komplettes Nachladen bei jeder Änderung.
+- Bei Wiederverbindung einmalig fehlende Änderungen synchronisieren.
+- Veraltete Datenbankantworten überschreiben keine neueren lokalen oder eingehenden Änderungen.
+- Optimistische Änderungen bei Speicherversagen gezielt zurücknehmen.
+
 ## 2.3.3
 
 - 4-Wochen-Plan beginnt mit der aktuellen Kalenderwoche; 31.08.–06.09.2026 wird korrekt angezeigt.
