@@ -1116,7 +1116,7 @@ function ShoppingScreen({
     }
 
     const temporary: ShoppingItem = {
-      id: `local-${Date.now()}`,
+      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       name: cleanName,
       amount,
       unit,
@@ -1141,7 +1141,10 @@ function ShoppingScreen({
     setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, done: nextDone, completedByName: nextDone ? household.myDisplayName : null } : entry));
     feedback();
     try { await setShoppingDone(item.id, nextDone); }
-    catch (error: any) { Alert.alert('Änderung nicht gespeichert', germanError(error?.message)); }
+    catch (error: any) {
+      setItems((current) => current.map((entry) => entry.id === item.id && entry.done === nextDone ? item : entry));
+      Alert.alert('Änderung nicht gespeichert', germanError(error?.message));
+    }
   };
 
   const remove = async (item: ShoppingItem) => {
@@ -1472,6 +1475,7 @@ function MainApp() {
     if (startup) setStartupProgress(58);
 
     const loadPrimaryData = async () => {
+      const shoppingStartVersion = shoppingLoadGeneration.current;
       const [shoppingResult, planResult] = await Promise.allSettled([
         withTimeout(loadShopping(), 5000, 'Einkaufsliste'),
         withTimeout(loadMealPlan(), 5000, 'Wochenplan'),
@@ -1479,8 +1483,10 @@ function MainApp() {
       if (generation !== loadGeneration.current) return;
 
       if (shoppingResult.status === 'fulfilled') {
-        shoppingLoadGeneration.current += 1;
-        setItems(shoppingResult.value);
+        if (shoppingStartVersion === shoppingLoadGeneration.current) {
+          shoppingLoadGeneration.current += 1;
+          setItems(shoppingResult.value);
+        }
       } else {
         const retryRequest = ++shoppingLoadGeneration.current;
         setTimeout(() => {
@@ -1577,14 +1583,15 @@ function MainApp() {
         if (next) setItems((current) => mergeRealtimeShoppingItem(current, next));
       }
 
-      // Reconcile quietly after the instant delta update. This enriches optional profile
-      // names and protects against a missed realtime packet without delaying the UI.
-      schedule('shopping-reconcile', () => {
-        const request = ++shoppingLoadGeneration.current;
-        withTimeout(loadShopping(), 5000, 'Einkaufsliste')
-          .then((next) => { if (request === shoppingLoadGeneration.current) setItems(next); })
-          .catch(() => undefined);
-      }, 1150);
+      // The incoming delta is applied immediately. No delayed full-list reload:
+      // asynchronous fetches can otherwise make checked items jump backwards.
+    };
+
+    const reconcileShopping = () => {
+      const request = ++shoppingLoadGeneration.current;
+      withTimeout(loadShopping(), 5000, 'Einkaufsliste')
+        .then((next) => { if (request === shoppingLoadGeneration.current) setItems(next); })
+        .catch(() => undefined);
     };
 
     const channel = supabase.channel(`mealflow-household-${household.id}`)
@@ -1593,13 +1600,22 @@ function MainApp() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter }, () => schedule('recipes', () => { withTimeout(loadOwnRecipes(), 5000, 'Rezepte').then(setOwnRecipes).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_history', filter }, () => schedule('history', () => { withTimeout(loadMealHistory(), 5000, 'Verlauf').then(setHistory).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'household_members', filter }, () => schedule('household', () => { withTimeout(loadHousehold(), 6000, 'Haushalt').then(setHousehold).catch(() => undefined); }))
-      .subscribe();
+      .subscribe((status) => {
+        // One protected catch-up fetch on first subscription and reconnection.
+        if (status === 'SUBSCRIBED') reconcileShopping();
+      });
     return () => {
       timers.forEach((timer) => clearTimeout(timer));
       timers.clear();
       supabase.removeChannel(channel);
     };
   }, [household?.id]);
+
+  const setShoppingOptimistic: React.Dispatch<React.SetStateAction<ShoppingItem[]>> = (update) => {
+    // An in-flight reconciliation must never replace a newer local edit.
+    shoppingLoadGeneration.current += 1;
+    setItems(update);
+  };
 
   const changeTab = (next: Tab) => {
     setTab(next);
@@ -1611,8 +1627,15 @@ function MainApp() {
       ? selection.recipe.ingredients.map((ingredient) => ({ name: ingredient.name, amount: ingredient.amount ?? 1, unit: UNITS.includes(ingredient.unit ?? '') ? ingredient.unit! : 'Stk.' }))
       : selection.recipe.ingredients.map((ingredient) => ({ name: ingredient, amount: 1, unit: 'Stk.' }));
     const temporary: ShoppingItem[] = rawIngredients.slice(0, 30).map((ingredient, index) => ({ id: `recipe-${Date.now()}-${index}`, done: false, addedByName: household?.myDisplayName, ...ingredient }));
-    setItems((current) => [...temporary, ...current]);
-    temporary.forEach((item) => addShoppingItem({ name: item.name, amount: item.amount, unit: item.unit }).catch(() => undefined));
+    setShoppingOptimistic((current) => [...temporary, ...current]);
+    temporary.forEach((item) => {
+      addShoppingItem({ name: item.name, amount: item.amount, unit: item.unit })
+        .then((remote) => setShoppingOptimistic((current) => mergeRealtimeShoppingItem(
+          current.filter((entry) => entry.id !== item.id),
+          remote,
+        )))
+        .catch(() => setShoppingOptimistic((current) => current.filter((entry) => entry.id !== item.id)));
+    });
     changeTab('einkauf');
     if (preferences.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
   };
@@ -1646,7 +1669,7 @@ function MainApp() {
       <View style={styles.screenArea}>
         {tab === 'heute' ? <HomeScreen household={household} meals={meals} saskiaMeals={saskiaMeals} items={items} history={history} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
         {tab === 'woche' ? <PlanScreen household={household} meals={meals} saskiaMeals={saskiaMeals} setMeals={setMeals} setSaskiaMeals={setSaskiaMeals} onSettings={() => setSettingsOpen(true)} /> : null}
-        {tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setItems} preferences={preferences} onSettings={() => setSettingsOpen(true)} /> : null}
+        {tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setShoppingOptimistic} preferences={preferences} onSettings={() => setSettingsOpen(true)} /> : null}
         {tab === 'notizen' ? <NotesScreen household={household} onSettings={() => setSettingsOpen(true)} /> : null}
       </View>
       <View style={{ paddingBottom: Math.max(insets.bottom, 8), backgroundColor: colors.surface }}><TabBar tab={tab} onChange={changeTab} /></View>
