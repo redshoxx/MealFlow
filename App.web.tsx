@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -148,6 +148,15 @@ function mergeWebRealtimeShoppingItem(current: ShoppingItem[], next: ShoppingIte
   const existingIndex = current.findIndex((item) => item.id === next.id);
   if (existingIndex >= 0) {
     return current.map((item, index) => index === existingIndex ? { ...item, ...next } : item);
+  }
+  const optimisticIndex = current.findIndex((item) => (
+    item.id.startsWith('local-')
+    && normalize(item.name) === normalize(next.name)
+    && Number(item.amount) === Number(next.amount)
+    && item.unit === next.unit
+  ));
+  if (optimisticIndex >= 0) {
+    return current.map((item, index) => index === optimisticIndex ? next : item);
   }
   return [next, ...current];
 }
@@ -377,7 +386,12 @@ function PlanScreen({ household, meals, saskiaMeals, onChanged, onSettings }: { 
   </>;
 }
 
-function ShoppingScreen({ household, items, onChanged, onSettings }: { household: Household; items: ShoppingItem[]; onChanged: () => Promise<void>; onSettings: () => void }) {
+function ShoppingScreen({ household, items, setItems, onSettings }: {
+  household: Household;
+  items: ShoppingItem[];
+  setItems: React.Dispatch<React.SetStateAction<ShoppingItem[]>>;
+  onSettings: () => void;
+}) {
   const [formOpen, setFormOpen] = useState(false);
   const [shoppingMode, setShoppingMode] = useState(false);
   const [editing, setEditing] = useState<ShoppingItem | null>(null);
@@ -402,14 +416,41 @@ function ShoppingScreen({ household, items, onChanged, onSettings }: { household
   const save = async () => {
     const clean = name.trim();
     const numeric = Number(amount.replace(',', '.'));
-    if (!clean || !Number.isFinite(numeric) || numeric <= 0) return;
+    if (busy || !clean || !Number.isFinite(numeric) || numeric <= 0) return;
     setBusy(true);
+    const original = editing;
+    const temporary: ShoppingItem | null = original ? null : {
+      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: clean,
+      amount: numeric,
+      unit,
+      done: false,
+      addedByName: household.myDisplayName,
+    };
+    if (original) {
+      setItems((current) => current.map((entry) =>
+        entry.id === original.id ? { ...entry, name: clean, amount: numeric, unit } : entry));
+    } else if (temporary) {
+      setItems((current) => [temporary, ...current]);
+    }
+    setFormOpen(false);
     try {
-      if (editing) await updateShoppingItem(editing.id, { name: clean, amount: numeric, unit });
-      else await addShoppingItem({ name: clean, amount: numeric, unit });
-      await onChanged();
-      setFormOpen(false);
+      if (original) {
+        const remote = await updateShoppingItem(original.id, { name: clean, amount: numeric, unit });
+        setItems((current) => current.map((entry) => entry.id === original.id ? { ...entry, ...remote } : entry));
+      } else if (temporary) {
+        const remote = await addShoppingItem({ name: clean, amount: numeric, unit });
+        setItems((current) => mergeWebRealtimeShoppingItem(
+          current.filter((entry) => entry.id !== temporary.id),
+          remote,
+        ));
+      }
     } catch (e: any) {
+      if (original) {
+        setItems((current) => current.map((entry) => entry.id === original.id ? original : entry));
+      } else if (temporary) {
+        setItems((current) => current.filter((entry) => entry.id !== temporary.id));
+      }
       Alert.alert('Produkt nicht gespeichert', e?.message || 'Bitte versuche es erneut.');
     } finally {
       setBusy(false);
@@ -417,19 +458,28 @@ function ShoppingScreen({ household, items, onChanged, onSettings }: { household
   };
 
   const toggle = async (item: ShoppingItem) => {
+    const nextDone = !item.done;
+    setItems((current) => current.map((entry) =>
+      entry.id === item.id ? {
+        ...entry,
+        done: nextDone,
+        completedByName: nextDone ? household.myDisplayName : null,
+      } : entry));
     try {
-      await setShoppingDone(item.id, !item.done);
-      await onChanged();
+      await setShoppingDone(item.id, nextDone);
     } catch (e: any) {
+      setItems((current) => current.map((entry) =>
+        entry.id === item.id && entry.done === nextDone ? item : entry));
       Alert.alert('Änderung fehlgeschlagen', e?.message || 'Bitte versuche es erneut.');
     }
   };
 
   const remove = async (item: ShoppingItem) => {
+    setItems((current) => current.filter((entry) => entry.id !== item.id));
     try {
       await deleteShoppingItem(item.id);
-      await onChanged();
     } catch (e: any) {
+      setItems((current) => current.some((entry) => entry.id === item.id) ? current : [item, ...current]);
       Alert.alert('Löschen fehlgeschlagen', e?.message || 'Bitte versuche es erneut.');
     }
   };
@@ -530,6 +580,11 @@ function MainWebApp() {
   const [tab, setTab] = useState<Tab>('heute');
   const [household, setHousehold] = useState<Household | null>(null);
   const [items, setItems] = useState<ShoppingItem[]>([]);
+  const shoppingRevision = useRef(0);
+  const updateShoppingItems: React.Dispatch<React.SetStateAction<ShoppingItem[]>> = (update) => {
+    shoppingRevision.current += 1;
+    setItems(update);
+  };
   const [meals, setMeals] = useState<Record<string, string>>({});
   const [saskiaMeals, setSaskiaMeals] = useState<Record<string, string>>({});
   const [preferences, setPreferences] = useState<AppPreferences>(DEFAULT_PREFERENCES);
@@ -540,10 +595,14 @@ function MainWebApp() {
 
   const refresh = useCallback(async () => {
     try {
+      const shoppingStartVersion = shoppingRevision.current;
       const nextHousehold = await loadHousehold();
       const [shopping, plan] = await Promise.all([loadShopping(), loadMealPlan()]);
       setHousehold(nextHousehold);
-      setItems(shopping);
+      if (shoppingStartVersion === shoppingRevision.current) {
+        shoppingRevision.current += 1;
+        setItems(shopping);
+      }
       setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
       setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
       setError('');
@@ -567,9 +626,11 @@ function MainWebApp() {
   useEffect(() => {
     if (!household?.id) return;
     const filter = `household_id=eq.${household.id}`;
-    let shoppingReconcileTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
 
     const applyShoppingRealtime = (payload: any) => {
+      // Patch the UI on arrival instead of fetching the entire list.
+      shoppingRevision.current += 1;
       if (payload?.eventType === 'DELETE') {
         const deletedId = payload?.old?.id ? String(payload.old.id) : '';
         if (deletedId) setItems((current) => current.filter((item) => item.id !== deletedId));
@@ -577,20 +638,26 @@ function MainWebApp() {
         const next = webShoppingItemFromRealtimeRow(payload?.new, household);
         if (next) setItems((current) => mergeWebRealtimeShoppingItem(current, next));
       }
+    };
 
-      if (shoppingReconcileTimer) clearTimeout(shoppingReconcileTimer);
-      shoppingReconcileTimer = setTimeout(() => {
-        loadShopping().then(setItems).catch(() => undefined);
-      }, 900);
+    const catchUpShopping = () => {
+      const request = ++shoppingRevision.current;
+      loadShopping().then((next) => {
+        if (!disposed && request === shoppingRevision.current) setItems(next);
+      }).catch(() => undefined);
     };
 
     const channel = supabase.channel(`mealflow-web-${household.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, applyShoppingRealtime)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => loadMealPlan().then((plan) => { setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? '']))); setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? '']))); }).catch(() => undefined))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'household_members', filter }, () => loadHousehold().then(setHousehold).catch(() => undefined))
-      .subscribe();
+      .subscribe((status) => {
+        // Catch events missed during disconnects without delaying live events.
+        if (status === 'SUBSCRIBED') catchUpShopping();
+      });
     return () => {
-      if (shoppingReconcileTimer) clearTimeout(shoppingReconcileTimer);
+      disposed = true;
+      shoppingRevision.current += 1;
       supabase.removeChannel(channel);
     };
   }, [household?.id]);
@@ -623,7 +690,7 @@ function MainWebApp() {
     : tab === 'woche'
       ? <PlanScreen household={household} meals={meals} saskiaMeals={saskiaMeals} onChanged={refresh} onSettings={() => setSettingsOpen(true)} />
       : tab === 'einkauf'
-        ? <ShoppingScreen household={household} items={items} onChanged={refresh} onSettings={() => setSettingsOpen(true)} />
+        ? <ShoppingScreen household={household} items={items} setItems={updateShoppingItems} onSettings={() => setSettingsOpen(true)} />
         : <NotesScreen household={household} onSettings={() => setSettingsOpen(true)} />;
 
   return <View style={styles.appRoot}>
