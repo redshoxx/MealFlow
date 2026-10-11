@@ -1,13 +1,13 @@
-# MealFlow 2.3.3
+# MealFlow 2.4.0
 
 MealFlow ist eine deutschsprachige Haushalts-App für **iPhone, Android und Web**. Alle Plattformen verwenden denselben Supabase-Account und dieselben Realtime-Daten.
 
 ## Hauptbereiche
 
-- **Heute** – heutige Planung und Schnellübersicht
+- **Heute** – neues Dashboard mit Wochenfortschritt, Abendessen, Saskias Gericht und kompakter Einkaufsübersicht
 - **4-Wochen-Plan** – aktuelle Kalenderwoche plus drei weitere Wochen; pro Tag Abendessen + „Für Saskia“
 - **Einkauf** – gemeinsame Realtime-Einkaufsliste, automatische Lidl-orientierte Sortierung und Einkaufsmodus
-- **Notizen** – private Notizen; einzelne Notizen können gezielt mit Haushaltsmitgliedern geteilt werden
+- **Rezepte** – gesunde und proteinreiche Gerichte mit Zutaten, Zubereitung und ungefähren Nährwerten; direkt zum Wochenplan oder Einkauf übernehmen
 - **Haushalt & Einstellungen** – Mitglieder, Einladungsrechte, Darstellung, Cozy Mode und Neutral Dark Mode
 
 ## Web-Version
@@ -22,7 +22,7 @@ Die Web-Oberfläche ist responsiv:
 - Tablet/kleine Browserfenster: kompakteres Layout
 - Mobile Browser: Bottom-Navigation ähnlich der App
 
-Web und Mobile teilen Supabase Auth, PostgreSQL, RLS und Realtime. Dadurch erscheinen Änderungen an Einkauf, Haushalt, Wochenplan oder Notizen geräteübergreifend.
+Web und Mobile teilen Supabase Auth, PostgreSQL, RLS und Realtime. Änderungen an Einkauf, Haushalt und Wochenplan erscheinen geräteübergreifend. Frühere persönliche Notizen bleiben in der Datenbank erhalten, werden in der aktuellen Navigation jedoch nicht angezeigt.
 
 ### Web lokal starten
 
@@ -38,7 +38,7 @@ npm run typecheck
 npm run build:web
 ```
 
-Der statische SPA-Build wird nach `dist/` exportiert.
+Der statische SPA-Build wird nach `dist/` exportiert. Vor dem Export wird das neue App-Icon generiert.
 
 ### Vercel
 
