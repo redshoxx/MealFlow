@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Alert,
   Appearance,
   Modal,
@@ -186,15 +187,12 @@ function IconAction({ icon, onPress, danger = false, label }: { icon: React.Comp
 }
 
 function WebBrandMark({ size = 58 }: { size?: number }) {
-  const plateSize = Math.round(size * 0.62);
-  const checkSize = Math.round(size * 0.30);
-  const accentSize = Math.max(9, Math.round(size * 0.17));
-  return <View style={[styles.webBrandShell, { width: size, height: size, borderRadius: Math.round(size * 0.29) }]}>
-    <View style={{ width: plateSize, height: plateSize, borderRadius: Math.round(plateSize / 2), backgroundColor: '#F7F5EC', alignItems: 'center', justifyContent: 'center' }}>
-      <MaterialCommunityIcons name="check-bold" size={checkSize} color="#214F33" />
-    </View>
-    <View style={[styles.webBrandAccent, { width: accentSize, height: accentSize, borderRadius: Math.round(accentSize / 2), right: Math.round(size * 0.10), top: Math.round(size * 0.09) }]} />
-  </View>;
+  return <Image
+    source={require('./assets/icon.png')}
+    resizeMode="contain"
+    style={{ width: size, height: size, borderRadius: Math.round(size * 0.24) }}
+    accessibilityLabel="MealFlow Logo"
+  />;
 }
 
 function PageHeader({ eyebrow, title, subtitle, onSettings }: { eyebrow?: string; title: string; subtitle: string; onSettings: () => void }) {
@@ -243,7 +241,7 @@ function AuthScreen() {
       <WebBrandMark size={62} />
       <Text style={styles.authBrand}>MealFlow</Text>
       <Text style={styles.authHero}>Gemeinsam planen. Einfach einkaufen.</Text>
-      <Text style={styles.authCopy}>Die Web-Version synchronisiert Haushalt, 4-Wochen-Plan, Einkauf und Notizen direkt mit deiner iPhone- und Android-App.</Text>
+      <Text style={styles.authCopy}>Die Web-Version synchronisiert Haushalt, 4-Wochen-Plan und Einkauf mit der App. Gesunde Rezepte sind direkt verfügbar.</Text>
       <View style={styles.authFeatureList}>
         {['Realtime-Synchronisierung', 'Responsive für Desktop & Tablet', 'Gleicher MealFlow-Account'].map((item) => <View key={item} style={styles.authFeature}><MaterialCommunityIcons name="check-circle" size={19} color={colors.accent} /><Text style={styles.authFeatureText}>{item}</Text></View>)}
       </View>
