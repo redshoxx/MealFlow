@@ -1,196 +1,267 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions,
+  ActivityIndicator,
+  Image,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { addShoppingItem, saveMeal } from '../lib/cloud';
-import { HEALTHY_NUTRITION_NOTE, HEALTHY_RECIPES, searchHealthyRecipes, type HealthyRecipe } from '../lib/healthyRecipes';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { saveMeal } from '../lib/cloud';
+import { searchRecipePage, type Recipe } from '../lib/recipes';
+import { colors, typography } from '../ui/theme';
 
-type Filter = 'Alle' | 'High Protein' | 'Vegetarisch' | 'Schnell';
-const FILTERS: Filter[] = ['Alle', 'High Protein', 'Vegetarisch', 'Schnell'];
+const SUGGESTIONS = ['Pasta', 'Hähnchen', 'Vegetarisch', 'Kartoffeln', 'Suppe'];
+const DISPLAY_LIMIT = 100;
 
-function isoDate(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+function localIso(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+function validImage(value?: string) {
+  return value && /^https:\/\//i.test(value) ? value : undefined;
+}
+function validWebsite(value?: string) {
+  return Boolean(value && /^https:\/\//i.test(value));
+}
+function Picture({ recipe, large = false }: { recipe: Recipe; large?: boolean }) {
+  const original = validImage(recipe.image);
+  const fallback = validImage(recipe.imageFallback);
+  const [url, setUrl] = useState(original || fallback);
+  const [triedFallback, setTriedFallback] = useState(false);
+  useEffect(() => { setUrl(original || fallback); setTriedFallback(false); }, [original, fallback]);
+  return <View style={[styles.photo, large && styles.photoLarge]}>
+    {url ? <Image
+      source={{ uri: url }}
+      style={styles.photoFill}
+      resizeMode="cover"
+      accessibilityLabel={`Rezeptbild laut Quelle: ${recipe.title}`}
+      onError={() => {
+        if (!triedFallback && fallback && fallback !== url) { setTriedFallback(true); setUrl(fallback); }
+        else setUrl(undefined);
+      }}
+    /> : <View style={styles.noPhoto}>
+      <MaterialCommunityIcons name="image-off-outline" size={large ? 35 : 27} color={colors.textTertiary} />
+      <Text style={styles.noPhotoText}>Kein Quellenbild</Text>
+    </View>}
+  </View>;
 }
 
-function ingredientToShoppingItem(raw: string) {
-  const cleaned = raw.trim();
-  const match = cleaned.match(/^(\d+(?:[.,]\d+)?)\s*(kg|ml|g|l|EL|TL)?\s+(.+)$/i);
-  if (!match) return { name: cleaned, amount: 1, unit: 'Stk.' };
-  const amount = Number((match[1] || '1').replace(',', '.'));
-  const unit = match[2] || 'Stk.';
-  const name = match[3] || cleaned;
-  return { name: name.slice(0, 120), amount: Number.isFinite(amount) ? amount : 1, unit };
-}
-
-function MiniButton({ label, icon, onPress, secondary = false, disabled = false }: {
-  label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-  onPress: () => void; secondary?: boolean; disabled?: boolean;
-}) {
-  return <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [
-    styles.button, secondary && styles.buttonSecondary, (pressed || disabled) && styles.pressed,
-  ]}>
-    <MaterialCommunityIcons name={icon} size={18} color={secondary ? colors.accent : colors.onAccent} />
-    <Text style={[styles.buttonText, secondary && styles.buttonTextSecondary]}>{label}</Text>
+function RecipeCard({ recipe, desktop, onPress }: { recipe: Recipe; desktop: boolean; onPress: () => void }) {
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.card, desktop && styles.cardDesktop, pressed && styles.pressed]}>
+    <Picture recipe={recipe} />
+    <View style={styles.cardBody}>
+      <View style={styles.sourceRow}>
+        <MaterialCommunityIcons name="web" size={13} color={colors.accent} />
+        <Text style={styles.sourceLabel} numberOfLines={1}>{recipe.source || 'Originalquelle'}</Text>
+      </View>
+      <Text style={styles.cardTitle} numberOfLines={2}>{recipe.title}</Text>
+      {recipe.description ? <Text style={styles.cardDescription} numberOfLines={2}>{recipe.description}</Text> : null}
+      <View style={styles.cardBottom}>
+        <Text style={styles.cardHint}>{recipe.ingredients.length ? 'Zutaten vorhanden' : 'Rezept auf Quellseite'}</Text>
+        <MaterialCommunityIcons name="arrow-top-right" size={18} color={colors.accent} />
+      </View>
+    </View>
   </Pressable>;
 }
 
-export function ProteinRecipesScreen({ onSettings, onPlanChanged, onGoShopping }: {
+export function ProteinRecipesScreen({ onSettings, onPlanChanged }: {
   onSettings: () => void;
   onPlanChanged?: (date: string, title: string) => void;
   onGoShopping?: () => void;
 }) {
   const { width } = useWindowDimensions();
-  const desktop = width >= 800;
+  const desktop = width >= 740;
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<Filter>('Alle');
-  const [selected, setSelected] = useState<HealthyRecipe | null>(null);
+  const [submitted, setSubmitted] = useState('');
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [webConfigured, setWebConfigured] = useState(true);
+  const [error, setError] = useState('');
+  const [selected, setSelected] = useState<Recipe | null>(null);
   const [planning, setPlanning] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-
-  const visibleRecipes = useMemo(() => searchHealthyRecipes(query).filter((recipe) => {
-    if (filter === 'High Protein') return recipe.proteinGrams >= 35;
-    if (filter === 'Vegetarisch') return Boolean(recipe.vegetarian);
-    if (filter === 'Schnell') return (recipe.minutes || 99) <= 20;
-    return true;
-  }), [filter, query]);
-
-  const days = useMemo(() => Array.from({ length: 14 }, (_, index) => {
+  const [feedback, setFeedback] = useState('');
+  const latest = useRef(0);
+  const pageRef = useRef(0);
+  const loadMoreLock = useRef(false);
+  const days = useMemo(() => Array.from({ length: 28 }, (_, index) => {
     const date = new Date();
     date.setHours(12, 0, 0, 0);
     date.setDate(date.getDate() + index);
-    return { iso: isoDate(date), label: date.toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit' }) };
-  }), [planning]);
+    return { iso: localIso(date), label: date.toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: 'short' }) };
+  }), []);
 
-  const addIngredients = async () => {
-    if (!selected || busy) return;
-    setBusy(true);
-    setMessage('');
-    const results = await Promise.allSettled(selected.ingredients.map((part) => addShoppingItem(ingredientToShoppingItem(part.name))));
-    const failed = results.filter((result) => result.status === 'rejected').length;
-    setBusy(false);
-    if (failed) { setMessage(`${failed} Zutaten konnten nicht hinzugefügt werden. Bitte erneut versuchen.`); return; }
-    setMessage('Zutaten sind in deiner Einkaufsliste.');
-    setSelected(null);
-    onGoShopping?.();
-  };
-
-  const planRecipe = async (date: string) => {
-    if (!selected || busy) return;
-    setBusy(true);
-    setMessage('');
+  const runSearch = useCallback(async (term: string) => {
+    const generation = ++latest.current;
+    pageRef.current = 0;
+    loadMoreLock.current = false;
+    setRecipes([]);
+    setError('');
+    setLoading(true);
+    setHasMore(false);
     try {
-      await saveMeal(date, selected.title);
-      onPlanChanged?.(date, selected.title);
-      setPlanning(false);
-      setSelected(null);
-      setMessage('Rezept im Wochenplan gespeichert.');
+      const found = await searchRecipePage(term.trim(), {}, 0);
+      if (generation !== latest.current) return;
+      setRecipes(found.recipes.slice(0, DISPLAY_LIMIT));
+      setHasMore(found.hasMore && found.recipes.length < DISPLAY_LIMIT);
+      setWebConfigured(found.webConfigured);
     } catch {
-      setMessage('Wochenplan konnte nicht aktualisiert werden. Bitte erneut versuchen.');
+      if (generation === latest.current) setError('Rezepte konnten nicht geladen werden. Bitte versuche es erneut.');
     } finally {
-      setBusy(false);
+      if (generation === latest.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handle = setTimeout(() => { setSubmitted(query.trim()); void runSearch(query); }, query.trim() ? 420 : 80);
+    return () => clearTimeout(handle);
+  }, [query, runSearch]);
+
+  const loadMore = async () => {
+    if (loading || loadingMore || loadMoreLock.current || !hasMore || recipes.length >= DISPLAY_LIMIT) return;
+    loadMoreLock.current = true;
+    setLoadingMore(true);
+    const generation = latest.current;
+    const nextPage = pageRef.current + 1;
+    try {
+      const found = await searchRecipePage(submitted, {}, nextPage);
+      if (generation !== latest.current) return;
+      pageRef.current = nextPage;
+      setRecipes((current) => {
+        const known = new Set(current.map((item) => item.url || item.id));
+        const more = found.recipes.filter((item) => !known.has(item.url || item.id));
+        return [...current, ...more].slice(0, DISPLAY_LIMIT);
+      });
+      setHasMore(found.hasMore && found.recipes.length > 0 && recipes.length + found.recipes.length < DISPLAY_LIMIT);
+    } catch {
+      if (generation === latest.current) setError('Weitere Treffer konnten nicht geladen werden.');
+    } finally {
+      loadMoreLock.current = false;
+      if (generation === latest.current) setLoadingMore(false);
     }
   };
 
-  const active = selected;
+  const closeDetail = () => { setSelected(null); setPlanning(false); setFeedback(''); };
+  const saveToPlan = async (date: string) => {
+    if (!selected || busy) return;
+    setBusy(true);
+    try {
+      await saveMeal(date, selected.title);
+      onPlanChanged?.(date, selected.title);
+      closeDetail();
+    } catch {
+      setFeedback('Das Gericht konnte nicht eingeplant werden. Bitte erneut versuchen.');
+    } finally { setBusy(false); }
+  };
+
   return <View style={styles.root}>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.page, desktop && styles.pageWide]}>
-      <View style={styles.header}>
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={[styles.page, desktop && styles.pageWide]}
+      onScroll={({ nativeEvent }) => {
+        const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+        if (contentSize.height - (layoutMeasurement.height + contentOffset.y) < 300) void loadMore();
+      }}
+      scrollEventThrottle={300}
+    >
+      <View style={styles.heading}>
         <View style={styles.flex1}>
-          <Text style={styles.eyebrow}>MEALFLOW · FIT & BALANCIERT</Text>
-          <Text style={styles.title}>Gesund genießen</Text>
-          <Text style={styles.subtitle}>Proteinreiche Gerichte, unkompliziert gekocht. Zutaten direkt einkaufen oder für einen Abend einplanen.</Text>
+          <Text style={styles.eyebrow}>REZEPTE · ONLINE ENTDECKEN</Text>
+          <Text style={styles.title}>Rezepte entdecken</Text>
+          <Text style={styles.subtitle}>Echte Rezeptquellen und deren Bilder – keine erfundenen Zutaten oder Nährwerte.</Text>
         </View>
-        <Pressable onPress={onSettings} accessibilityLabel="Einstellungen" style={styles.settingsButton}>
-          <MaterialCommunityIcons name="cog-outline" size={24} color={colors.text} />
+        <Pressable onPress={onSettings} accessibilityLabel="Einstellungen" style={styles.settings}>
+          <MaterialCommunityIcons name="cog-outline" size={22} color={colors.text} />
         </Pressable>
       </View>
 
-      <View style={styles.hero}>
-        <View style={styles.heroTop}>
-          <View style={styles.heroIcon}><MaterialCommunityIcons name="food-apple-outline" size={29} color={colors.onAccent} /></View>
-          <View style={styles.flex1}><Text style={styles.heroEyebrow}>DEINE GERICHTE</Text><Text style={styles.heroTitle}>Gut essen. Einfach planen.</Text></View>
-        </View>
-        <Text style={styles.heroCopy}>Entdecke ${HEALTHY_RECIPES.length} vollständige Rezepte mit Zutaten, Zubereitung und ungefähren Eiweißwerten – ohne Warten auf eine Rezept-API.</Text>
-        <View style={styles.heroMeta}>
-          <Text style={styles.heroTag}>Protein</Text><Text style={styles.heroTag}>Alltagstauglich</Text><Text style={styles.heroTag}>Ausgewogen</Text>
-        </View>
-      </View>
-
-      <View style={styles.searchRow}>
+      <View style={styles.search}>
         <MaterialCommunityIcons name="magnify" size={22} color={colors.textSecondary} />
         <TextInput
-          value={query} onChangeText={setQuery} placeholder="Gericht oder Zutat suchen"
-          placeholderTextColor={colors.textTertiary} style={styles.searchInput}
-          accessibilityLabel="Gesunde Rezepte durchsuchen"
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Rezept oder Zutat suchen"
+          placeholderTextColor={colors.textTertiary}
+          returnKeyType="search"
+          style={styles.searchText}
+          accessibilityLabel="Rezepte im Internet suchen"
         />
-        {query ? <Pressable onPress={() => setQuery('')}><MaterialCommunityIcons name="close-circle" size={20} color={colors.textTertiary} /></Pressable> : null}
+        {query ? <Pressable accessibilityLabel="Suche leeren" onPress={() => setQuery('')}><MaterialCommunityIcons name="close-circle-outline" size={21} color={colors.textTertiary} /></Pressable> : null}
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-        {FILTERS.map((choice) => <Pressable key={choice} onPress={() => setFilter(choice)} style={[styles.filter, filter === choice && styles.filterActive]}>
-          <Text style={[styles.filterText, filter === choice && styles.filterTextActive]}>{choice}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.queries}>
+        {SUGGESTIONS.map((tag) => <Pressable key={tag} onPress={() => setQuery(tag)} style={[styles.queryChip, query === tag && styles.queryChipActive]}>
+          <Text style={[styles.queryText, query === tag && styles.queryTextActive]}>{tag}</Text>
         </Pressable>)}
       </ScrollView>
 
-      <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Rezepte entdecken</Text><Text style={styles.sectionCount}>{visibleRecipes.length} Gerichte</Text></View>
-      <View style={styles.grid}>
-        {visibleRecipes.map((recipe) => <Pressable key={recipe.id} onPress={() => { setSelected(recipe); setMessage(''); }} style={({ pressed }) => [styles.card, desktop && styles.cardDesktop, pressed && styles.pressed]}>
-          <View style={styles.cardTop}>
-            <View style={styles.cardIcon}><MaterialCommunityIcons name={recipe.vegetarian ? 'leaf' : 'silverware-fork-knife'} size={28} color={colors.accent} /></View>
-            <View style={styles.cardProtein}><Text style={styles.proteinLabel}>{recipe.proteinGrams} g Protein</Text></View>
-          </View>
-          <Text style={styles.cardCategory}>{recipe.healthyCategory.toUpperCase()}</Text>
-          <Text style={styles.cardTitle}>{recipe.title}</Text>
-          <Text style={styles.cardDesc} numberOfLines={2}>{recipe.description}</Text>
-          <View style={styles.cardFooter}>
-            <MaterialCommunityIcons name="clock-outline" size={16} color={colors.textSecondary} /><Text style={styles.cardMeta}>{recipe.minutes} Min</Text>
-            <MaterialCommunityIcons name="fire" size={16} color={colors.textSecondary} /><Text style={styles.cardMeta}>ca. {recipe.calories} kcal</Text>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.accent} />
-          </View>
-        </Pressable>)}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{query ? 'Suchergebnisse' : 'Aus dem Internet'}</Text>
+        <Text style={styles.sectionMeta}>{loading ? 'Suche läuft' : `${recipes.length} Treffer geladen`}</Text>
       </View>
-      {visibleRecipes.length === 0 ? <View style={styles.empty}><Text style={styles.subtitle}>Keine Treffer. Versuche einen anderen Suchbegriff.</Text></View> : null}
-      {message ? <Text style={styles.feedback}>{message}</Text> : null}
-      <Text style={styles.disclaimer}>{HEALTHY_NUTRITION_NOTE}</Text>
+      {!webConfigured ? <View style={styles.notice}><MaterialCommunityIcons name="information-outline" size={20} color={colors.textSecondary} /><Text style={styles.noticeText}>Die Web-Rezeptsuche ist derzeit nicht verfügbar. Es werden nur Ergebnisse verbundener Rezeptanbieter angezeigt.</Text></View> : null}
+      {error ? <View style={styles.notice}><Text style={styles.noticeText}>{error}</Text><Pressable onPress={() => void runSearch(submitted)}><Text style={styles.retry}>Erneut versuchen</Text></Pressable></View> : null}
+      {loading ? <View style={styles.loading}><ActivityIndicator color={colors.accent} /><Text style={styles.noticeText}>Echte Rezeptdaten werden geladen …</Text></View> : null}
+      <View style={styles.grid}>
+        {recipes.map((recipe) => <RecipeCard key={recipe.id} recipe={recipe} desktop={desktop} onPress={() => { setSelected(recipe); setFeedback(''); }} />)}
+      </View>
+      {!loading && recipes.length === 0 && !error ? <View style={styles.empty}>
+        <MaterialCommunityIcons name="magnify-close" size={30} color={colors.textTertiary} />
+        <Text style={styles.emptyTitle}>Keine Rezepttreffer gefunden</Text>
+        <Text style={styles.noticeText}>Suche nach einem Gericht oder versuche einen anderen Begriff. Es werden keine Beispielrezepte eingeblendet.</Text>
+      </View> : null}
+      {hasMore && !loading ? <Pressable disabled={loadingMore} onPress={() => void loadMore()} style={styles.moreButton}>
+        {loadingMore ? <ActivityIndicator color={colors.accent} /> : <Text style={styles.moreText}>Weitere echte Rezepte laden</Text>}
+      </Pressable> : null}
     </ScrollView>
 
-    <Modal visible={Boolean(active)} animationType="slide" presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : 'fullScreen'} onRequestClose={() => { setSelected(null); setPlanning(false); }}>
-      <SafeAreaView style={styles.modalRoot} edges={['top', 'bottom']}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.modalContent}>
-          <View style={styles.modalTop}>
-            <Pressable accessibilityLabel="Rezept schließen" onPress={() => { setSelected(null); setPlanning(false); }} style={styles.closeButton}>
-              <MaterialCommunityIcons name="arrow-left" size={23} color={colors.text} />
-            </Pressable>
-            <Text style={styles.eyebrow}>GESUNDES REZEPT</Text>
+    <Modal visible={Boolean(selected)} animationType="slide" presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : 'fullScreen'} onRequestClose={closeDetail}>
+      <SafeAreaView style={styles.modal} edges={['top', 'bottom']}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.detail, desktop && styles.detailWide]}>
+          <View style={styles.detailTop}>
+            <Pressable onPress={closeDetail} accessibilityLabel="Rezept schließen" style={styles.back}><MaterialCommunityIcons name="arrow-left" size={23} color={colors.text} /></Pressable>
+            <Text style={styles.eyebrow}>QUELLE: {selected?.source || 'Online'}</Text>
           </View>
-          {active ? <>
-            <View style={styles.detailArtwork}><MaterialCommunityIcons name={active.vegetarian ? 'leaf' : 'food-variant'} size={62} color={colors.accent} /></View>
-            <Text style={styles.title}>{active.title}</Text>
-            <Text style={styles.subtitle}>{active.description}</Text>
-            <View style={styles.detailNutrition}>
-              <View style={styles.metric}><Text style={styles.metricValue}>{active.proteinGrams} g</Text><Text style={styles.metricLabel}>Protein</Text></View>
-              <View style={styles.metric}><Text style={styles.metricValue}>ca. {active.calories}</Text><Text style={styles.metricLabel}>kcal</Text></View>
-              <View style={styles.metric}><Text style={styles.metricValue}>{active.minutes} Min</Text><Text style={styles.metricLabel}>Zubereitung</Text></View>
-            </View>
-            <Text style={styles.sectionTitle}>Zutaten · 1 Portion</Text>
-            <View style={styles.ingredients}>{active.ingredients.map((part, i) => <View key={i} style={styles.ingredientRow}><MaterialCommunityIcons name="check-circle-outline" size={18} color={colors.accent} /><Text style={styles.ingredientText}>{part.name}</Text></View>)}</View>
-            <Text style={styles.sectionTitle}>Zubereitung</Text>
-            <Text style={styles.instructions}>{active.instructions}</Text>
-            <Text style={styles.disclaimer}>{HEALTHY_NUTRITION_NOTE}</Text>
-            {message ? <Text style={styles.feedback}>{message}</Text> : null}
-            {!planning ? <View style={styles.actions}>
-              <MiniButton label="Für einen Abend einplanen" icon="calendar-plus" disabled={busy} onPress={() => setPlanning(true)} />
-              <MiniButton label={busy ? 'Wird hinzugefügt …' : 'Zutaten zur Einkaufsliste'} icon="cart-plus" secondary disabled={busy} onPress={() => void addIngredients()} />
-            </View> : <>
-              <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Tag auswählen</Text><Pressable onPress={() => setPlanning(false)}><Text style={styles.feedback}>Zurück</Text></Pressable></View>
-              <View style={styles.dayGrid}>{days.map((day) => <Pressable disabled={busy} onPress={() => void planRecipe(day.iso)} key={day.iso} style={styles.dayChoice}>
-                <Text style={styles.dayText}>{day.label}</Text><MaterialCommunityIcons name="chevron-right" size={18} color={colors.accent} />
+          {selected ? <>
+            <Picture recipe={selected} large />
+            <Text style={styles.detailTitle}>{selected.title}</Text>
+            {selected.description ? <Text style={styles.detailDescription}>{selected.description}</Text> : null}
+            {selected.ingredients.length > 0 ? <>
+              <Text style={styles.sectionTitle}>Zutaten laut Quelle</Text>
+              <View style={styles.detailList}>{selected.ingredients.map((item, index) => <View key={index} style={styles.ingredient}>
+                <MaterialCommunityIcons name="circle-small" size={23} color={colors.accent} />
+                <Text style={styles.ingredientText}>{item.unit ? `${item.unit} ` : ''}{item.amount ? `${item.amount} ` : ''}{item.name}</Text>
+              </View>)}</View>
+            </> : null}
+            {selected.instructions ? <>
+              <Text style={styles.sectionTitle}>Zubereitung laut Quelle</Text>
+              <Text style={styles.instructions}>{selected.instructions}</Text>
+            </> : <Text style={styles.noticeText}>Zutaten und Anleitung findest du direkt auf der Original-Rezeptseite.</Text>}
+            {validWebsite(selected.url) ? <Pressable onPress={() => void Linking.openURL(selected.url!)} style={styles.primaryAction}>
+              <MaterialCommunityIcons name="open-in-new" size={20} color={colors.onAccent} />
+              <Text style={styles.primaryActionText}>Originalrezept öffnen</Text>
+            </Pressable> : <Text style={styles.noticeText}>Für dieses Rezept hat der Anbieter keinen externen Original-Link übermittelt.</Text>}
+            {!planning ? <Pressable onPress={() => setPlanning(true)} style={styles.secondaryAction}>
+              <MaterialCommunityIcons name="calendar-plus" size={20} color={colors.accent} />
+              <Text style={styles.secondaryActionText}>Im Wochenplan eintragen</Text>
+            </Pressable> : <>
+              <Text style={styles.sectionTitle}>Datum auswählen</Text>
+              <View style={styles.dayList}>{days.map((day) => <Pressable disabled={busy} key={day.iso} onPress={() => void saveToPlan(day.iso)} style={styles.dayRow}>
+                <Text style={styles.dayText}>{day.label}</Text>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.accent} />
               </Pressable>)}</View>
             </>}
             {busy ? <ActivityIndicator color={colors.accent} /> : null}
+            {feedback ? <Text style={styles.errorText}>{feedback}</Text> : null}
           </> : null}
         </ScrollView>
       </SafeAreaView>
@@ -201,71 +272,68 @@ export function ProteinRecipesScreen({ onSettings, onPlanChanged, onGoShopping }
 function createStyles() {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
-    page: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 40, gap: 17 },
-    pageWide: { paddingHorizontal: 34, paddingTop: 32, maxWidth: 1300, width: '100%', alignSelf: 'center' },
-    flex1: { flex: 1 },
-    header: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-    eyebrow: { ...typography.label, color: colors.accent, marginBottom: 4 },
-    title: { ...typography.h1, color: colors.text },
-    subtitle: { ...typography.body, color: colors.textSecondary, marginTop: 6 },
-    settingsButton: { width: 46, height: 46, backgroundColor: colors.surface, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-    hero: { padding: 23, borderRadius: radius.xl, backgroundColor: colors.accent, gap: 12 },
-    heroTop: { flexDirection: 'row', alignItems: 'center', gap: 13 },
-    heroIcon: { width: 52, height: 52, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
-    heroEyebrow: { ...typography.label, color: colors.onAccent, opacity: 0.78 },
-    heroTitle: { ...typography.h2, color: colors.onAccent, marginTop: 3 },
-    heroCopy: { ...typography.body, color: colors.onAccent, opacity: 0.93 },
-    heroMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-    heroTag: { ...typography.caption, color: colors.onAccent, backgroundColor: 'rgba(255,255,255,0.15)', paddingVertical: 5, paddingHorizontal: 10, borderRadius: radius.pill, overflow: 'hidden' },
-    searchRow: { minHeight: 53, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, flexDirection: 'row', gap: 9, alignItems: 'center', paddingHorizontal: 14 },
-    searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: 10 },
-    filters: { gap: 8 },
-    filter: { borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: 15, paddingVertical: 10 },
-    filterActive: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
-    filterText: { ...typography.caption, fontWeight: '700', color: colors.textSecondary },
-    filterTextActive: { color: colors.accent },
-    sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
-    sectionTitle: { ...typography.title, color: colors.text },
-    sectionCount: { ...typography.caption, color: colors.textSecondary },
+    page: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 92, gap: 15 },
+    pageWide: { maxWidth: 1100, width: '100%', alignSelf: 'center', paddingHorizontal: 24 },
+    flex1: { flex: 1, minWidth: 0 },
+    heading: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+    eyebrow: { ...typography.label, color: colors.accent, marginBottom: 5 },
+    title: { fontSize: 27, lineHeight: 34, fontWeight: '800', color: colors.text },
+    subtitle: { ...typography.body, color: colors.textSecondary, marginTop: 5, lineHeight: 21 },
+    settings: { width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    search: { minHeight: 50, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, gap: 10 },
+    searchText: { flex: 1, minWidth: 0, fontSize: 16, color: colors.text, paddingVertical: 11 },
+    queries: { gap: 8, paddingRight: 5 },
+    queryChip: { paddingHorizontal: 14, minHeight: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    queryChipActive: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+    queryText: { ...typography.caption, fontWeight: '700', color: colors.textSecondary },
+    queryTextActive: { color: colors.accent },
+    section: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+    sectionTitle: { fontSize: 18, lineHeight: 24, fontWeight: '800', color: colors.text },
+    sectionMeta: { ...typography.caption, color: colors.textTertiary },
+    notice: { padding: 13, backgroundColor: colors.surfaceMuted, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 9, flexWrap: 'wrap' },
+    noticeText: { ...typography.body, color: colors.textSecondary, flexShrink: 1 },
+    retry: { ...typography.bodyStrong, color: colors.accent },
+    loading: { minHeight: 130, justifyContent: 'center', alignItems: 'center', gap: 9 },
     grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-    card: { width: '100%', backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: 17, gap: 8 },
-    cardDesktop: { width: '48.8%' },
-    pressed: { opacity: 0.72 },
-    cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    cardIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-    cardProtein: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
-    proteinLabel: { ...typography.caption, fontWeight: '800', color: colors.accent },
-    cardCategory: { ...typography.label, color: colors.accent },
-    cardTitle: { ...typography.h2, color: colors.text },
-    cardDesc: { ...typography.body, color: colors.textSecondary },
-    cardFooter: { flexDirection: 'row', gap: 7, alignItems: 'center', marginTop: 8 },
-    cardMeta: { ...typography.caption, color: colors.textSecondary, marginRight: 6 },
-    empty: { backgroundColor: colors.surface, padding: 30, borderRadius: radius.lg },
-    feedback: { ...typography.caption, color: colors.accent, fontWeight: '700' },
-    disclaimer: { ...typography.caption, color: colors.textTertiary, marginTop: 3 },
-    modalRoot: { flex: 1, backgroundColor: colors.background },
-    modalContent: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 45, gap: 18, maxWidth: 800, width: '100%', alignSelf: 'center' },
-    modalTop: { flexDirection: 'row', alignItems: 'center', gap: 18 },
-    closeButton: { width: 42, height: 42, backgroundColor: colors.surface, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-    detailArtwork: { height: 148, borderRadius: radius.xl, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-    detailNutrition: { flexDirection: 'row', gap: 8 },
-    metric: { flex: 1, padding: 12, backgroundColor: colors.surface, borderRadius: radius.md, alignItems: 'center', gap: 4 },
-    metricValue: { ...typography.bodyStrong, color: colors.text },
-    metricLabel: { ...typography.caption, color: colors.textTertiary },
-    ingredients: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16, gap: 14 },
-    ingredientRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+    card: { width: '100%', backgroundColor: colors.surface, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, overflow: 'hidden' },
+    cardDesktop: { width: '48.7%' },
+    pressed: { opacity: 0.75 },
+    photo: { height: 182, backgroundColor: colors.surfaceMuted, overflow: 'hidden' },
+    photoLarge: { height: 240, borderRadius: 10 },
+    photoFill: { width: '100%', height: '100%' },
+    noPhoto: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6 },
+    noPhotoText: { ...typography.caption, color: colors.textTertiary },
+    cardBody: { padding: 14, gap: 7 },
+    sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    sourceLabel: { ...typography.caption, color: colors.accent, flexShrink: 1 },
+    cardTitle: { fontSize: 18, lineHeight: 24, fontWeight: '800', color: colors.text },
+    cardDescription: { ...typography.body, color: colors.textSecondary },
+    cardBottom: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border, marginTop: 5, paddingTop: 9, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    cardHint: { ...typography.caption, color: colors.textTertiary },
+    moreButton: { minHeight: 48, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.accent, padding: 9 },
+    moreText: { ...typography.bodyStrong, color: colors.accent },
+    empty: { padding: 28, borderRadius: 10, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center', gap: 10 },
+    emptyTitle: { ...typography.bodyStrong, color: colors.text },
+    modal: { flex: 1, backgroundColor: colors.background },
+    detail: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 70, gap: 15 },
+    detailWide: { maxWidth: 820, width: '100%', alignSelf: 'center' },
+    detailTop: { flexDirection: 'row', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
+    back: { width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+    detailTitle: { fontSize: 25, lineHeight: 31, fontWeight: '800', color: colors.text },
+    detailDescription: { ...typography.body, color: colors.textSecondary },
+    detailList: { gap: 9, padding: 14, backgroundColor: colors.surface, borderRadius: 10 },
+    ingredient: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
     ingredientText: { ...typography.body, color: colors.text, flex: 1 },
-    instructions: { ...typography.body, color: colors.textSecondary, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16, lineHeight: 26, overflow: 'hidden' },
-    actions: { gap: 10 },
-    button: { minHeight: 52, borderRadius: radius.md, backgroundColor: colors.accent, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, paddingHorizontal: 12 },
-    buttonSecondary: { backgroundColor: colors.accentSoft },
-    buttonText: { ...typography.bodyStrong, color: colors.onAccent },
-    buttonTextSecondary: { color: colors.accent },
-    dayGrid: { gap: 8 },
-    dayChoice: { minHeight: 50, backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    instructions: { ...typography.body, color: colors.textSecondary, lineHeight: 25, padding: 14, borderRadius: 10, backgroundColor: colors.surface },
+    primaryAction: { minHeight: 50, backgroundColor: colors.accent, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+    primaryActionText: { ...typography.bodyStrong, color: colors.onAccent },
+    secondaryAction: { minHeight: 50, backgroundColor: colors.accentSoft, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+    secondaryActionText: { ...typography.bodyStrong, color: colors.accent },
+    dayList: { gap: 6 },
+    dayRow: { minHeight: 48, borderRadius: 8, paddingHorizontal: 14, backgroundColor: colors.surface, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     dayText: { ...typography.body, color: colors.text },
+    errorText: { ...typography.body, color: colors.danger },
   });
 }
-
 let styles = createStyles();
 export function refreshProteinRecipeStyles() { styles = createStyles(); }
