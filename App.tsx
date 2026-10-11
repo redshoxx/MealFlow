@@ -61,7 +61,7 @@ import { isCloudConfigured, supabase } from './src/lib/supabase';
 import { ActionButton, EmptyState, IconButton, refreshUiComponentStyles, ScreenHeader, SectionTitle, SurfaceCard } from './src/ui/components';
 import { colors, getShadow, radius, setThemePalette, spacing, typography } from './src/ui/theme';
 import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';
-import { NotesScreen, refreshNotesStyles } from './src/screens/NotesScreen';
+import { ProteinRecipesScreen, refreshProteinRecipeStyles } from './src/screens/ProteinRecipesScreen';
 import { checkAndPromptAndroidUpdate } from './src/lib/androidUpdater';
 import appConfig from './app.json';
 
@@ -742,108 +742,72 @@ function SettingsSheet({
 function HomeScreen({ household, meals, saskiaMeals, items, history, onNavigate, onSettings, onCooked }: { household: Household; meals: Record<string, string>; saskiaMeals: Record<string, string>; items: ShoppingItem[]; history: MealHistoryEntry[]; onNavigate: (tab: Tab) => void; onSettings: () => void; onCooked: (title: string) => Promise<void> }) {
   const today = todayIso();
   const now = new Date();
-  const hour = now.getHours();
-  const greeting = hour < 11 ? 'Guten Morgen' : hour < 17 ? 'Guten Tag' : 'Guten Abend';
+  const greeting = now.getHours() < 11 ? 'Guten Morgen' : now.getHours() < 17 ? 'Guten Tag' : 'Guten Abend';
+  const name = household.myDisplayName?.trim();
   const tonight = meals[today] || '';
   const saskiaTonight = saskiaMeals[today] || '';
-  const tomorrowDate = new Date(now);
-  tomorrowDate.setDate(now.getDate() + 1);
-  const tomorrow = dateIso(tomorrowDate);
-  const tomorrowMeal = meals[tomorrow] || '';
-  const tomorrowSaskia = saskiaMeals[tomorrow] || '';
-  const nextSeven = Array.from({ length: 7 }, (_, index) => {
+  const cooked = tonight ? history.some((entry) => entry.cookedOn === today && normalizeTitle(entry.recipeTitle) === normalizeTitle(tonight)) : false;
+  const open = items.filter((item) => !item.done);
+  const week = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(now);
     date.setHours(12, 0, 0, 0);
-    date.setDate(now.getDate() + index);
-    return dateIso(date);
+    date.setDate(date.getDate() + index);
+    const iso = dateIso(date);
+    return { date, iso, planned: Number(Boolean(meals[iso])) + Number(Boolean(saskiaMeals[iso])) };
   });
-  const plannedNextSeven = nextSeven.reduce((count, iso) => count + (meals[iso] ? 1 : 0) + (saskiaMeals[iso] ? 1 : 0), 0);
-  const openItems = items.filter((item) => !item.done).length;
-  const doneItems = items.length - openItems;
-  const cookedToday = tonight ? history.some((entry) => entry.cookedOn === today && normalizeTitle(entry.recipeTitle) === normalizeTitle(tonight)) : false;
-  const dateLabel = now.toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' });
-  const name = household.myDisplayName?.trim();
-  const mealStatus = cookedToday ? 'Erledigt' : tonight ? 'Geplant' : 'Noch offen';
-
+  const planned = week.reduce((count, day) => count + day.planned, 0);
+  const tomorrow = week[1]!;
   return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent}>
-    <ScreenHeader
-      eyebrow={`${dateLabel} · ${household.name}`}
-      title={`${greeting}${name ? `, ${name}` : ''}`}
-      subtitle="Dein Tag in MealFlow – Essen, Einkauf und Haushalt kompakt an einem Ort."
-      action={<IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Konto und Einstellungen" />}
-    />
-
-    <SurfaceCard style={styles.todayHeroCard}>
-      <View style={styles.todayHeroTop}>
-        <MealFlowBrandMark size={52} />
-        <View style={styles.flex1}>
-          <Text style={styles.todayHeroEyebrow}>HEUTE IM BLICK</Text>
-          <Text style={styles.todayHeroTitle}>Was steht heute an?</Text>
-        </View>
-        <View style={[styles.todayStatusPill, cookedToday && styles.todayStatusPillDone]}>
-          <Text style={[styles.todayStatusText, cookedToday && styles.todayStatusTextDone]}>{mealStatus}</Text>
-        </View>
-      </View>
-
-      <View style={styles.todayMealGrid}>
-        <View style={styles.todayMealBlock}>
-          <View style={styles.todayMealLabelRow}><MaterialCommunityIcons name="silverware-fork-knife" size={17} color={colors.accent} /><Text style={styles.todayMealLabel}>ABENDESSEN</Text></View>
-          <Text style={[styles.todayMealTitle, !tonight && styles.todayMealEmpty]} numberOfLines={3}>{tonight || 'Noch nichts geplant'}</Text>
-        </View>
-        <View style={[styles.todayMealBlock, styles.todayMealBlockAccent]}>
-          <View style={styles.todayMealLabelRow}><MaterialCommunityIcons name="account-heart-outline" size={17} color={colors.accent} /><Text style={styles.todayMealLabel}>FÜR SASKIA</Text></View>
-          <Text style={[styles.todayMealTitle, !saskiaTonight && styles.todayMealEmpty]} numberOfLines={3}>{saskiaTonight || 'Noch nichts geplant'}</Text>
-        </View>
-      </View>
-
-      <View style={styles.todayHeroActions}>
-        <ActionButton label={tonight || saskiaTonight ? 'Plan öffnen' : 'Essen planen'} icon="calendar-week-outline" onPress={() => onNavigate('woche')} variant="secondary" style={styles.flexButton} />
-        {tonight && !cookedToday ? <ActionButton label="Gekocht" icon="check-circle-outline" onPress={() => onCooked(tonight)} style={styles.flexButton} /> : null}
-      </View>
-    </SurfaceCard>
-
-    <View style={styles.todayStatsRow}>
-      <Pressable onPress={() => onNavigate('einkauf')} style={styles.todayStatCard}>
-        <MaterialCommunityIcons name="cart-outline" size={21} color={colors.accent} />
-        <Text style={styles.todayStatValue}>{openItems}</Text>
-        <Text style={styles.todayStatLabel}>noch einkaufen</Text>
-        {doneItems > 0 ? <Text style={styles.todayStatMeta}>{doneItems} erledigt</Text> : null}
-      </Pressable>
-      <Pressable onPress={() => onNavigate('woche')} style={styles.todayStatCard}>
-        <MaterialCommunityIcons name="calendar-check-outline" size={21} color={colors.accent} />
-        <Text style={styles.todayStatValue}>{plannedNextSeven}/14</Text>
-        <Text style={styles.todayStatLabel}>7 Tage geplant</Text>
-      </Pressable>
-      <View style={styles.todayStatCard}>
-        <MaterialCommunityIcons name="account-group-outline" size={21} color={colors.accent} />
-        <Text style={styles.todayStatValue}>{household.members.length}</Text>
-        <Text style={styles.todayStatLabel}>{household.members.length === 1 ? 'Mitglied' : 'Mitglieder'}</Text>
-      </View>
-    </View>
-
-    <SectionTitle title="Morgen" />
-    <Pressable onPress={() => onNavigate('woche')} style={styles.tomorrowCard}>
-      <View style={styles.tomorrowDateBox}>
-        <Text style={styles.tomorrowDow}>{tomorrowDate.toLocaleDateString('de-AT', { weekday: 'short' }).replace('.', '').toUpperCase()}</Text>
-        <Text style={styles.tomorrowDay}>{tomorrowDate.toLocaleDateString('de-AT', { day: '2-digit' })}</Text>
-      </View>
+    <View style={styles.todayWelcomeRow}>
       <View style={styles.flex1}>
-        <Text style={styles.tomorrowLabel}>ABENDESSEN</Text>
-        <Text style={[styles.tomorrowMeal, !tomorrowMeal && styles.todayMealEmpty]} numberOfLines={1}>{tomorrowMeal || 'Noch offen'}</Text>
-        {tomorrowSaskia ? <Text style={styles.tomorrowSaskia} numberOfLines={1}>Für Saskia: {tomorrowSaskia}</Text> : null}
+        <Text style={styles.todayHeroEyebrow}>{now.toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' }).toUpperCase()} · {household.name}</Text>
+        <Text style={styles.todayWelcomeTitle}>{greeting}{name ? `, ${name}` : ''}</Text>
+        <Text style={styles.todaySetupText}>Das Wichtigste für deinen Tag auf einen Blick.</Text>
       </View>
-      <MaterialCommunityIcons name="chevron-right" size={24} color={colors.textTertiary} />
-    </Pressable>
-
-    <SectionTitle title="Schnellzugriff" />
-    <View style={styles.quickGrid}>
-      <Pressable style={styles.quickAction} onPress={() => onNavigate('einkauf')}><View style={styles.quickIcon}><MaterialCommunityIcons name="cart-plus" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.quickTitle}>Einkauf</Text><Text style={styles.quickText}>Produkte ergänzen oder Einkaufsmodus starten.</Text></View><MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} /></Pressable>
-      <Pressable style={styles.quickAction} onPress={() => onNavigate('notizen')}><View style={styles.quickIcon}><MaterialCommunityIcons name="note-text-outline" size={22} color={colors.accent} /></View><View style={styles.flex1}><Text style={styles.quickTitle}>Notizen & Listen</Text><Text style={styles.quickText}>Gedanken und Checklisten festhalten.</Text></View><MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} /></Pressable>
+      <IconButton icon="account-circle-outline" onPress={onSettings} accessibilityLabel="Einstellungen öffnen" />
+    </View>
+    <View style={styles.todayFocusCard}>
+      <View style={styles.todayFocusTop}>
+        <View><Text style={styles.todayFocusEyebrow}>DEIN WOCHENÜBERBLICK</Text><Text style={styles.todayFocusTitle}>{planned} von 14 Essen geplant</Text></View>
+        <MaterialCommunityIcons name="calendar-check-outline" size={27} color={colors.onAccent} />
+      </View>
+      <View style={styles.todayFocusTrack}><View style={[styles.todayFocusFill, { width: `${Math.round(planned / 14 * 100)}%` as `${number}%` }]} /></View>
+      <View style={styles.todayFocusDays}>{week.map((day, index) =>
+        <Pressable key={day.iso} onPress={() => onNavigate('woche')} style={[styles.todayFocusDay, index === 0 && styles.todayFocusDayCurrent]}>
+          <Text style={[styles.todayFocusDayText, index === 0 && styles.todayFocusDayTextCurrent]}>{day.date.toLocaleDateString('de-AT', { weekday: 'short' }).slice(0, 2)}</Text>
+          <Text style={[styles.todayFocusDayNumber, index === 0 && styles.todayFocusDayTextCurrent]}>{day.date.getDate()}</Text>
+          <View style={styles.todayFocusDots}><View style={[styles.todayFocusDot, day.planned >= 1 && styles.todayFocusDotDone]} /><View style={[styles.todayFocusDot, day.planned === 2 && styles.todayFocusDotDone]} /></View>
+        </Pressable>
+      )}</View>
+    </View>
+    <View style={styles.todaySectionRow}><SectionTitle title="Heute auf dem Speiseplan" /><Text style={styles.todaySectionCount}>{Number(Boolean(tonight)) + Number(Boolean(saskiaTonight))}/2</Text></View>
+    <View style={styles.todayMealCards}>
+      <Pressable onPress={() => onNavigate('woche')} style={[styles.todayMealFeature, styles.todayMealFeatureMain]}>
+        <View style={styles.todayMealFeatureTop}><MaterialCommunityIcons name="silverware-fork-knife" size={23} color={colors.accent} /><Text style={styles.todayMealFeatureLabel}>ABENDESSEN</Text><MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} /></View>
+        <Text style={[styles.todayMealFeatureTitle, !tonight && styles.todayMealEmpty]}>{tonight || 'Was gibt es heute?'}</Text>
+        <Text style={styles.todayMealFeatureHint}>{tonight ? cooked ? 'Bereits gekocht' : 'Für heute eingeplant' : 'Jetzt ein Gericht eintragen'}</Text>
+      </Pressable>
+      <Pressable onPress={() => onNavigate('woche')} style={[styles.todayMealFeature, styles.todayMealFeatureSaskia]}>
+        <View style={styles.todayMealFeatureTop}><MaterialCommunityIcons name="account-heart-outline" size={23} color={colors.accent} /><Text style={styles.todayMealFeatureLabel}>FÜR SASKIA</Text><MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} /></View>
+        <Text style={[styles.todayMealFeatureTitle, !saskiaTonight && styles.todayMealEmpty]}>{saskiaTonight || 'Noch kein Gericht geplant'}</Text>
+        <Text style={styles.todayMealFeatureHint}>Separater Essensplatz</Text>
+      </Pressable>
+    </View>
+    {tonight && !cooked ? <ActionButton label="Abendessen als gekocht markieren" icon="check-circle-outline" variant="secondary" onPress={() => onCooked(tonight)} /> : null}
+    <View style={styles.todaySectionRow}><SectionTitle title="Einkauf" /><Pressable onPress={() => onNavigate('einkauf')}><Text style={styles.todayLink}>Liste öffnen →</Text></Pressable></View>
+    <SurfaceCard style={styles.todayShoppingCard}>
+      <View style={styles.todayShoppingLead}><MaterialCommunityIcons name="cart-outline" size={23} color={colors.accent} /><View style={styles.flex1}><Text style={styles.todayShoppingHeadline}>{open.length} Produkte offen</Text><Text style={styles.todaySetupText}>Gemeinsame Einkaufsliste</Text></View></View>
+      {open.slice(0, 3).map((item) => <View style={styles.todayShoppingPreview} key={item.id}><MaterialCommunityIcons name="circle-outline" size={17} color={colors.textTertiary} /><Text style={styles.todayShoppingName} numberOfLines={1}>{item.name}</Text><Text style={styles.todayShoppingAmount}>{item.amount} {item.unit}</Text></View>)}
+      {open.length === 0 ? <Text style={styles.todaySetupText}>Alles erledigt – momentan steht nichts auf der Liste.</Text> : null}
+    </SurfaceCard>
+    <View style={styles.todayQuickButtons}>
+      <Pressable style={styles.todayQuickButton} onPress={() => onNavigate('rezepte')}><MaterialCommunityIcons name="food-apple-outline" size={22} color={colors.accent} /><Text style={styles.todayQuickText}>Gesunde Rezepte</Text><MaterialCommunityIcons name="chevron-right" size={18} color={colors.textTertiary} /></Pressable>
+      <Pressable style={styles.todayQuickButton} onPress={() => onNavigate('woche')}><MaterialCommunityIcons name="calendar-arrow-right" size={22} color={colors.accent} /><Text style={styles.todayQuickText}>Morgen: {meals[tomorrow.iso] || 'noch offen'}</Text><MaterialCommunityIcons name="chevron-right" size={18} color={colors.textTertiary} /></Pressable>
     </View>
   </ScrollView>;
 }
 
-function PlanScreen({ household, meals, saskiaMeals, setMeals, setSaskiaMeals, onSettings }: { household: Household; meals: Record<string, string>; saskiaMeals: Record<string, string>; setMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; setSaskiaMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; onSettings: () => void }) {
+function PlanScreen({ household, meals, saskiaMeals, setMeals, setSaskiaMeals, onSettings, onPlanEdit }: { household: Household; meals: Record<string, string>; saskiaMeals: Record<string, string>; setMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; setSaskiaMeals: React.Dispatch<React.SetStateAction<Record<string, string>>>; onSettings: () => void; onPlanEdit?: () => void }) {
   const insets = useSafeAreaInsets();
   const [selectedWeek, setSelectedWeek] = useState(0);
   const [editingDay, setEditingDay] = useState<string | null>(null);
@@ -890,6 +854,7 @@ function PlanScreen({ household, meals, saskiaMeals, setMeals, setSaskiaMeals, o
     const slot = editingSlot;
     if (slot === 'saskia') setSaskiaMeals((current) => ({ ...current, [plannedDate]: value }));
     else setMeals((current) => ({ ...current, [plannedDate]: value }));
+    onPlanEdit?.();
     closeEditor();
     try {
       if (slot === 'saskia') await saveSaskiaMeal(plannedDate, value || null);
@@ -906,6 +871,7 @@ function PlanScreen({ household, meals, saskiaMeals, setMeals, setSaskiaMeals, o
     const slot = editingSlot;
     if (slot === 'saskia') setSaskiaMeals((current) => ({ ...current, [plannedDate]: '' }));
     else setMeals((current) => ({ ...current, [plannedDate]: '' }));
+    onPlanEdit?.();
     closeEditor();
     try {
       if (slot === 'saskia') await saveSaskiaMeal(plannedDate, null);
@@ -1405,7 +1371,7 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
     { key: 'heute', label: 'Heute', icon: 'home-variant-outline', active: 'home-variant' },
     { key: 'woche', label: 'Woche', icon: 'calendar-week-outline', active: 'calendar-week' },
     { key: 'einkauf', label: 'Einkauf', icon: 'cart-outline', active: 'cart' },
-    { key: 'notizen', label: 'Notizen', icon: 'note-text-outline', active: 'note-text' },
+    { key: 'rezepte', label: 'Rezepte', icon: 'food-apple-outline', active: 'food-apple' },
   ];
   return <View style={styles.tabBar}>{tabs.map((item) => { const active = tab === item.key; return <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => onChange(item.key)} style={styles.tabItem}><MaterialCommunityIcons name={active ? item.active : item.icon} size={23} color={active ? colors.accent : colors.textTertiary} /><Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{item.label}</Text></Pressable>; })}</View>;
 }
@@ -1431,6 +1397,7 @@ function MainApp() {
   const [darkMode, setDarkMode] = useState(false);
   const loadGeneration = useRef(0);
   const shoppingLoadGeneration = useRef(0);
+  const planLoadGeneration = useRef(0);
 
   const applyAppearance = (mode: ThemeMode, cozy = preferences.cozyMode, neutralDark = preferences.neutralDarkMode) => {
     const nextDark = mode === 'dark' || (mode === 'system' && Appearance.getColorScheme() === 'dark');
@@ -1472,10 +1439,12 @@ function MainApp() {
     const nextHousehold = await withTimeout(loadHousehold(), 6000, 'Haushalt');
     if (generation !== loadGeneration.current) return;
     setHousehold(nextHousehold);
+    setReady(true);
     if (startup) setStartupProgress(58);
 
     const loadPrimaryData = async () => {
       const shoppingStartVersion = shoppingLoadGeneration.current;
+      const planStartVersion = planLoadGeneration.current;
       const [shoppingResult, planResult] = await Promise.allSettled([
         withTimeout(loadShopping(), 5000, 'Einkaufsliste'),
         withTimeout(loadMealPlan(), 5000, 'Wochenplan'),
@@ -1496,7 +1465,7 @@ function MainApp() {
         }, 500);
       }
 
-      if (planResult.status === 'fulfilled') {
+      if (planResult.status === 'fulfilled' && planStartVersion === planLoadGeneration.current) {
         const plan = planResult.value;
         setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
         setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
@@ -1596,13 +1565,29 @@ function MainApp() {
 
     const channel = supabase.channel(`mealflow-household-${household.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, applyShoppingRealtime)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => schedule('plan', () => { withTimeout(loadMealPlan(), 6000, 'Wochenplan').then((plan) => { setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? '']))); setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? '']))); }).catch(() => undefined); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, (payload: any) => {
+         // Apply the changed day immediately: no delayed fetch, no flickering.
+         ++planLoadGeneration.current;
+         const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
+         const date = typeof row?.planned_date === 'string' ? row.planned_date : '';
+         if (!date) return;
+         setMeals((current) => ({ ...current, [date]: payload.eventType === 'DELETE' ? '' : String(row.meal ?? '') }));
+         setSaskiaMeals((current) => ({ ...current, [date]: payload.eventType === 'DELETE' ? '' : String(row.meal_saskia ?? '') }));
+       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter }, () => schedule('recipes', () => { withTimeout(loadOwnRecipes(), 5000, 'Rezepte').then(setOwnRecipes).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_history', filter }, () => schedule('history', () => { withTimeout(loadMealHistory(), 5000, 'Verlauf').then(setHistory).catch(() => undefined); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'household_members', filter }, () => schedule('household', () => { withTimeout(loadHousehold(), 6000, 'Haushalt').then(setHousehold).catch(() => undefined); }))
       .subscribe((status) => {
         // One protected catch-up fetch on first subscription and reconnection.
-        if (status === 'SUBSCRIBED') reconcileShopping();
+        if (status === 'SUBSCRIBED') {
+           reconcileShopping();
+           const request = ++planLoadGeneration.current;
+           withTimeout(loadMealPlan(), 6000, 'Wochenplan').then((plan) => {
+             if (request !== planLoadGeneration.current) return;
+             setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
+             setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
+           }).catch(() => undefined);
+         }
       });
     return () => {
       timers.forEach((timer) => clearTimeout(timer));
@@ -1643,6 +1628,7 @@ function MainApp() {
   const planRecipe = async (plannedDate: string) => {
     if (!recipeToPlan) return;
     const title = recipeToPlan.recipe.title;
+    ++planLoadGeneration.current;
     setMeals((current) => ({ ...current, [plannedDate]: title }));
     setRecipeToPlan(null);
     changeTab('woche');
@@ -1660,17 +1646,33 @@ function MainApp() {
     }
   };
 
-  if (startupError) return <StartupErrorScreen message={startupError} onRetry={startApplication} />;
-  if (!ready || !household) return <LoadingScreen message="Deine Daten werden sicher geladen …" progress={startupProgress} />;
+  if (!household) return <View style={[styles.appRoot, { paddingTop: insets.top }]}>
+    <StatusBar style={darkMode ? 'light' : 'dark'} />
+    <View style={styles.screenArea}>
+      <ScrollView contentContainerStyle={styles.screenContent}>
+        <Text style={styles.todayHeroEyebrow}>MEALFLOW</Text>
+        <Text style={styles.todayWelcomeTitle}>Dein Zuhause für Essen & Planung</Text>
+        <SurfaceCard style={styles.todaySetupCard}>
+          <MaterialCommunityIcons name={startupError ? 'cloud-alert-outline' : 'home-heart'} size={27} color={colors.accent} />
+          <View style={styles.flex1}>
+            <Text style={styles.todayMealTitle}>{startupError ? 'Verbindung nicht verfügbar' : 'Haushalt verbinden'}</Text>
+            <Text style={styles.todaySetupText}>{startupError || 'Die Startseite ist schon bereit. Deine gemeinsamen Daten erscheinen gleich.'}</Text>
+          </View>
+        </SurfaceCard>
+        {startupError ? <ActionButton label="Erneut versuchen" icon="refresh" onPress={startApplication} /> : null}
+      </ScrollView>
+    </View>
+    <View style={{ paddingBottom: Math.max(insets.bottom, 8), backgroundColor: colors.surface }}><TabBar tab={tab} onChange={changeTab} /></View>
+  </View>;
 
   return (
     <View style={[styles.appRoot, { paddingTop: insets.top }]}>
       <StatusBar style={darkMode ? 'light' : 'dark'} />
       <View style={styles.screenArea}>
         {tab === 'heute' ? <HomeScreen household={household} meals={meals} saskiaMeals={saskiaMeals} items={items} history={history} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
-        {tab === 'woche' ? <PlanScreen household={household} meals={meals} saskiaMeals={saskiaMeals} setMeals={setMeals} setSaskiaMeals={setSaskiaMeals} onSettings={() => setSettingsOpen(true)} /> : null}
+        {tab === 'woche' ? <PlanScreen household={household} meals={meals} saskiaMeals={saskiaMeals} setMeals={setMeals} setSaskiaMeals={setSaskiaMeals} onPlanEdit={() => { ++planLoadGeneration.current; }} onSettings={() => setSettingsOpen(true)} /> : null}
         {tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setShoppingOptimistic} preferences={preferences} onSettings={() => setSettingsOpen(true)} /> : null}
-        {tab === 'notizen' ? <NotesScreen household={household} onSettings={() => setSettingsOpen(true)} /> : null}
+        {tab === 'rezepte' ? <ProteinRecipesScreen onSettings={() => setSettingsOpen(true)} onGoShopping={() => changeTab('einkauf')} onPlanChanged={(date, title) => { ++planLoadGeneration.current; setMeals((current) => ({ ...current, [date]: title })); }} /> : null}
       </View>
       <View style={{ paddingBottom: Math.max(insets.bottom, 8), backgroundColor: colors.surface }}><TabBar tab={tab} onChange={changeTab} /></View>
       <SettingsSheet visible={settingsOpen} email={email} household={household} pendingInvites={invitations.length} preferences={preferences} darkMode={darkMode} onPreferencesChange={updatePreferences} onClose={() => setSettingsOpen(false)} onHousehold={() => { setSettingsOpen(false); setHouseholdOpen(true); }} />
@@ -1704,7 +1706,7 @@ function Root() {
     });
     return () => { active = false; listener.subscription.unsubscribe(); };
   }, []);
-  if (checking) return <LoadingScreen message="Anmeldung wird geprüft …" progress={8} />;
+  if (checking) return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   if (!isCloudConfigured) return <View style={styles.loadingScreen}><Text style={styles.configurationTitle}>Cloud-Verbindung fehlt</Text><Text style={styles.configurationText}>MealFlow benötigt die Supabase-Konfiguration, damit dein Haushalt sicher synchronisiert werden kann.</Text></View>;
   return authenticated ? <MainApp /> : <AuthScreen />;
 }
@@ -1717,6 +1719,13 @@ function createStyles() {
   authRoot: { flex: 1, backgroundColor: colors.background }, authContent: { flexGrow: 1, justifyContent: 'center', padding: 24, gap: 12 }, brandMark: { width: 58, height: 58, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', ...getShadow() }, authBrand: { ...typography.title, color: colors.accent, marginTop: 6 }, authHero: { ...typography.hero, color: colors.text, maxWidth: 380 }, authSubtitle: { ...typography.body, color: colors.textSecondary, maxWidth: 370, marginBottom: 12 }, authCard: { padding: 18, gap: 16 }, segmentedControl: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: 4 }, segmentButton: { flex: 1, minHeight: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, segmentButtonActive: { backgroundColor: colors.surface, ...getShadow() }, segmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, segmentTextActive: { color: colors.text }, inputGroup: { gap: 7 }, inputLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, inputShell: { minHeight: 52, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.background, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.md }, textInput: { flex: 1, ...typography.body, color: colors.text, paddingVertical: 12 }, authHint: { ...typography.caption, color: colors.textTertiary, textAlign: 'center' },
   homeExpiryCard: { paddingHorizontal: 14, overflow: 'hidden' }, homeExpiryRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, homeExpiryName: { ...typography.caption, color: colors.text, fontWeight: '800', flex: 1 }, homeExpiryStatus: { fontSize: 11, lineHeight: 14, color: colors.accent, fontWeight: '800' }, homeExpiryStatusDanger: { color: colors.danger },
   brandLogoShell: { backgroundColor: '#173F2C', alignItems: 'center', justifyContent: 'center', ...getShadow() }, brandLogoAccent: { position: 'absolute', backgroundColor: '#BFE3A5' },
+  todayWelcomeRow: { flexDirection: 'row', alignItems: 'center', gap: 12 }, todayWelcomeTitle: { ...typography.h1, color: colors.text, marginTop: 4 }, todaySetupCard: { flexDirection: 'row', alignItems: 'center', gap: 13, padding: 18 }, todaySetupText: { ...typography.caption, color: colors.textSecondary, marginTop: 5 },
+  todayFocusCard: { padding: 17, borderRadius: radius.xl, backgroundColor: colors.accent, gap: 14 }, todayFocusTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, todayFocusEyebrow: { ...typography.label, color: colors.onAccent, opacity: 0.8 }, todayFocusTitle: { ...typography.h2, color: colors.onAccent, marginTop: 4 }, todayFocusTrack: { width: '100%', height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.25)', overflow: 'hidden' }, todayFocusFill: { height: 6, backgroundColor: colors.onAccent, borderRadius: 3 },
+  todayFocusDays: { flexDirection: 'row', gap: 4 }, todayFocusDay: { flex: 1, minHeight: 76, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 13, alignItems: 'center', justifyContent: 'center', gap: 4 }, todayFocusDayCurrent: { backgroundColor: colors.onAccent }, todayFocusDayText: { ...typography.caption, color: colors.onAccent, fontWeight: '700' }, todayFocusDayNumber: { ...typography.bodyStrong, color: colors.onAccent }, todayFocusDayTextCurrent: { color: colors.accent }, todayFocusDots: { flexDirection: 'row', gap: 3 }, todayFocusDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' }, todayFocusDotDone: { backgroundColor: colors.onAccent },
+  todaySectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, todaySectionCount: { ...typography.caption, color: colors.accent, fontWeight: '800' },
+  todayMealCards: { gap: 10 }, todayMealFeature: { borderRadius: radius.lg, padding: 16, gap: 9, minHeight: 124, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, todayMealFeatureMain: { backgroundColor: colors.surface }, todayMealFeatureSaskia: { backgroundColor: colors.accentSoft }, todayMealFeatureTop: { flexDirection: 'row', alignItems: 'center', gap: 9 }, todayMealFeatureLabel: { flex: 1, ...typography.label, color: colors.accent }, todayMealFeatureTitle: { ...typography.h2, color: colors.text }, todayMealFeatureHint: { ...typography.caption, color: colors.textSecondary },
+  todayShoppingCard: { padding: 16, gap: 12 }, todayShoppingLead: { flexDirection: 'row', alignItems: 'center', gap: 11 }, todayShoppingHeadline: { ...typography.bodyStrong, color: colors.text }, todayShoppingPreview: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 9, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }, todayShoppingName: { flex: 1, ...typography.body, color: colors.text }, todayShoppingAmount: { ...typography.caption, color: colors.textSecondary }, todayLink: { ...typography.caption, color: colors.accent, fontWeight: '800' },
+  todayQuickButtons: { gap: 9 }, todayQuickButton: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, todayQuickText: { flex: 1, ...typography.bodyStrong, color: colors.text },
   todayHeroCard: { padding: 18, gap: 16, overflow: 'hidden' }, todayHeroTop: { flexDirection: 'row', alignItems: 'center', gap: 12 }, todayHeroEyebrow: { ...typography.label, color: colors.accent }, todayHeroTitle: { ...typography.title, color: colors.text, marginTop: 2 }, todayStatusPill: { minHeight: 30, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 }, todayStatusPillDone: { backgroundColor: colors.accentSoft }, todayStatusText: { ...typography.caption, color: colors.textSecondary, fontWeight: '800' }, todayStatusTextDone: { color: colors.accent },
   todayMealGrid: { flexDirection: 'row', gap: 10 }, todayMealBlock: { flex: 1, minHeight: 122, borderRadius: radius.lg, backgroundColor: colors.surfaceMuted, padding: 14, justifyContent: 'space-between', gap: 10 }, todayMealBlockAccent: { backgroundColor: colors.accentSoft }, todayMealLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 }, todayMealLabel: { ...typography.label, color: colors.accent }, todayMealTitle: { ...typography.title, color: colors.text, lineHeight: 23 }, todayMealEmpty: { color: colors.textTertiary, fontWeight: '600' }, todayHeroActions: { flexDirection: 'row', gap: 10 },
   todayStatsRow: { flexDirection: 'row', gap: 8 }, todayStatCard: { flex: 1, minHeight: 116, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: 12, gap: 4, ...getShadow() }, todayStatValue: { fontSize: 24, lineHeight: 28, fontWeight: '800', color: colors.text, marginTop: 2 }, todayStatLabel: { fontSize: 11, lineHeight: 14, color: colors.textSecondary, fontWeight: '700' }, todayStatMeta: { fontSize: 10, lineHeight: 12, color: colors.textTertiary },
@@ -1881,6 +1890,6 @@ let styles = createStyles();
 function refreshAppStyles() {
   styles = createStyles();
   refreshUiComponentStyles();
-  refreshNotesStyles();
+  refreshProteinRecipeStyles();
 }
 
