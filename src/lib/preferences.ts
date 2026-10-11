@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type StartTab = 'heute' | 'woche' | 'einkauf' | 'notizen';
+export type StartTab = 'heute' | 'woche' | 'einkauf' | 'rezepte';
 
 export type AppPreferences = {
   themeMode: ThemeMode;
@@ -31,15 +31,15 @@ export async function loadPreferences(): Promise<AppPreferences> {
     if (!raw) return DEFAULT_PREFERENCES;
     const parsed = JSON.parse(raw) as Partial<AppPreferences> & Record<string, unknown>;
     const storedStartTab = typeof parsed.startTab === 'string' ? String(parsed.startTab) : '';
-    const retiredTabs = ['rezepte', 'kalorien', 'vorrat', 'budget'];
-    const migratedStartTab = retiredTabs.includes(storedStartTab) ? 'notizen' : storedStartTab;
+    const retiredTabs = ['notizen', 'kalorien', 'vorrat', 'budget'];
+    const migratedStartTab = retiredTabs.includes(storedStartTab) ? 'rezepte' : storedStartTab;
     return {
       ...DEFAULT_PREFERENCES,
       ...parsed,
       cozyMode: Boolean(parsed.cozyMode),
       neutralDarkMode: Boolean(parsed.neutralDarkMode),
       themeMode: ['system', 'light', 'dark'].includes(String(parsed.themeMode)) ? parsed.themeMode as ThemeMode : 'system',
-      startTab: ['heute', 'woche', 'einkauf', 'notizen'].includes(migratedStartTab) ? migratedStartTab as StartTab : 'heute',
+      startTab: ['heute', 'woche', 'einkauf', 'rezepte'].includes(migratedStartTab) ? migratedStartTab as StartTab : 'heute',
     };
   } catch {
     return DEFAULT_PREFERENCES;
