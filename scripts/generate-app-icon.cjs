@@ -63,39 +63,57 @@ function mix(a, b, t) {
 
 function makePixels(withBackground) {
   const pixels = Buffer.alloc(SIZE * SIZE * 4);
-  const deep = [22, 61, 42, 255];
-  const emerald = [43, 103, 68, 255];
-  const ivory = [248, 246, 236, 255];
-  const lime = [191, 227, 165, 255];
+  const deep = [7, 37, 31, 255];
+  const emerald = [22, 89, 65, 255];
+  const cream = [253, 252, 244, 255];
+  const mint = [114, 230, 156, 255];
 
+  // A recognizable bowl-and-leaf symbol, designed to remain sharp at 48px.
   for (let y = 0; y < SIZE; y += 1) {
     for (let x = 0; x < SIZE; x += 1) {
       const i = (y * SIZE + x) * 4;
-      const radial = Math.min(1, Math.hypot(x - 390, y - 350) / 900);
-      const vertical = y / (SIZE - 1);
-      const gradient = Math.min(1, 0.18 + radial * 0.46 + vertical * 0.22);
-
+      const glow = Math.min(1, Math.hypot(x - 260, y - 160) / 1100);
+      const shade = Math.max(0, Math.min(1, 0.12 + glow * 0.55 + y / SIZE * 0.20));
       let color = withBackground
-        ? [
-            mix(deep[0], emerald[0], gradient),
-            mix(deep[1], emerald[1], gradient),
-            mix(deep[2], emerald[2], gradient),
-            255,
-          ]
+        ? [mix(emerald[0], deep[0], shade), mix(emerald[1], deep[1], shade), mix(emerald[2], deep[2], shade), 255]
         : [0, 0, 0, 0];
 
-      // Main plate: a solid, high-contrast disc that remains legible at small sizes.
-      const dx = x - 500;
-      const dy = y - 530;
-      if (Math.hypot(dx, dy) <= 285) color = ivory;
+      // Three clean steam strokes – the central one merges into a leaf.
+      const steamA = distanceToSegment(x, y, 398, 470, 422, 386);
+      const steamB = distanceToSegment(x, y, 422, 386, 406, 323);
+      const steamC = distanceToSegment(x, y, 510, 460, 522, 365);
+      const steamD = distanceToSegment(x, y, 522, 365, 504, 305);
+      if (Math.min(steamA, steamB, steamC, steamD) < 16) color = cream;
 
-      // MealFlow check/flow mark.
-      const checkA = distanceToSegment(x, y, 360, 535, 455, 625);
-      const checkB = distanceToSegment(x, y, 455, 625, 655, 405);
-      if (checkA <= 43 || checkB <= 43) color = deep;
+      // Fresh leaf: rotated, tapered oval above the rim.
+      const lx = x - 628;
+      const ly = y - 322;
+      const ca = Math.cos(-0.63);
+      const sa = Math.sin(-0.63);
+      const along = lx * ca + ly * sa;
+      const across = -lx * sa + ly * ca;
+      const limit = 91 * Math.max(0, 1 - Math.abs(along) / 148);
+      if (Math.abs(along) < 148 && Math.abs(across) < limit * 0.62) color = mint;
+      // Subtle leaf vein.
+      if (Math.abs(along) < 99 && Math.abs(across) < 4) color = emerald;
 
-      // A small fresh accent dot/leaf gives the mark its own identity.
-      if (insideEllipse(x, y, 720, 315, 72, 50)) color = lime;
+      // Thick white bowl silhouette with a smooth curved base.
+      const dx = x - 512;
+      const distance = Math.abs(dx) / 266;
+      const top = 528 + distance * distance * 24;
+      const bottom = 796 - distance * distance * 249;
+      if (distance <= 1 && y >= top && y <= bottom) color = cream;
+
+      // A strong elliptical white rim with a dark inner opening.
+      if (insideEllipse(x, y, 512, 532, 267, 78)) color = cream;
+      if (insideEllipse(x, y, 512, 529, 218, 42)) color = withBackground ? [18, 77, 58, 255] : [19, 73, 52, 255];
+
+      // The bowl lip crosses in front of the opening.
+      if (y >= 565 && y <= 582 && Math.abs(dx) <= 221 && insideEllipse(x, y, 512, 532, 268, 78)) color = cream;
+
+      // Small carved curve on the front for depth.
+      const carve = distanceToSegment(x, y, 402, 681, 483, 716);
+      if (carve < 9) color = [190, 226, 203, 255];
 
       pixels[i] = color[0];
       pixels[i + 1] = color[1];
