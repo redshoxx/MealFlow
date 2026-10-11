@@ -35,7 +35,7 @@ import {
 } from './src/lib/cloud';
 import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';
 import { isCloudConfigured, supabase } from './src/lib/supabase';
-import { NotesScreen, refreshNotesStyles } from './src/screens/NotesScreen';
+import { ProteinRecipesScreen, refreshProteinRecipeStyles } from './src/screens/ProteinRecipesScreen';
 import { refreshUiComponentStyles } from './src/ui/components';
 import { colors, radius, setThemePalette, spacing, typography } from './src/ui/theme';
 import appConfig from './app.json';
@@ -57,7 +57,7 @@ const NAV: Array<{ key: Tab; label: string; icon: React.ComponentProps<typeof Ma
   { key: 'heute', label: 'Heute', icon: 'home-variant-outline' },
   { key: 'woche', label: '4-Wochen-Plan', icon: 'calendar-month-outline' },
   { key: 'einkauf', label: 'Einkauf', icon: 'cart-outline' },
-  { key: 'notizen', label: 'Notizen', icon: 'note-text-outline' },
+  { key: 'rezepte', label: 'Rezepte', icon: 'food-apple-outline' },
 ];
 
 const LIDL_GROUPS: Array<{ label: string; words: string[] }> = [
@@ -166,7 +166,7 @@ function applyTheme(preferences: AppPreferences) {
   setThemePalette(dark ? 'dark' : 'light', preferences.cozyMode, preferences.neutralDarkMode);
   styles = createStyles();
   refreshUiComponentStyles();
-  refreshNotesStyles();
+  refreshProteinRecipeStyles();
   return dark;
 }
 
@@ -265,61 +265,62 @@ function AuthScreen() {
 function HomeScreen({ household, items, meals, saskiaMeals, onNavigate, onSettings }: { household: Household; items: ShoppingItem[]; meals: Record<string, string>; saskiaMeals: Record<string, string>; onNavigate: (tab: Tab) => void; onSettings: () => void }) {
   const now = new Date();
   const today = isoDate(now);
-  const hour = now.getHours();
-  const greeting = hour < 11 ? 'Guten Morgen' : hour < 17 ? 'Guten Tag' : 'Guten Abend';
   const name = household.myDisplayName?.trim();
-  const openItems = items.filter((item) => !item.done).length;
-  const doneItems = items.length - openItems;
-  const nextSeven = Array.from({ length: 7 }, (_, index) => {
+  const greeting = now.getHours() < 11 ? 'Guten Morgen' : now.getHours() < 17 ? 'Guten Tag' : 'Guten Abend';
+  const week = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(now);
-    date.setDate(now.getDate() + index);
-    return isoDate(date);
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() + index);
+    const iso = isoDate(date);
+    return { iso, date, planned: Number(Boolean(meals[iso])) + Number(Boolean(saskiaMeals[iso])) };
   });
-  const plannedNextSeven = nextSeven.reduce((total, iso) => total + (meals[iso] ? 1 : 0) + (saskiaMeals[iso] ? 1 : 0), 0);
-  const tomorrowDate = new Date(now);
-  tomorrowDate.setDate(now.getDate() + 1);
-  const tomorrow = isoDate(tomorrowDate);
-  const date = now.toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
-
+  const planned = week.reduce((count, day) => count + day.planned, 0);
+  const openItems = items.filter((item) => !item.done);
+  const tomorrow = week[1]!;
   return <ScrollView contentContainerStyle={styles.pageContent}>
-    <PageHeader eyebrow={`${date} · ${household.name}`} title={`${greeting}${name ? `, ${name}` : ''}`} subtitle="Dein MealFlow-Tag – Essen, Einkauf und Haushalt kompakt zusammengefasst." onSettings={onSettings} />
+    <PageHeader eyebrow={`${now.toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' })} · ${household.name}`}
+      title={`${greeting}${name ? `, ${name}` : ''}`} subtitle="Dein Tag, übersichtlich geplant – alles Wichtige auf einer Seite." onSettings={onSettings} />
 
-    <View style={[styles.card, styles.todayWebHero]}>
-      <View style={styles.todayWebHeroTop}>
-        <WebBrandMark size={58} />
-        <View style={styles.flex1}>
-          <Text style={styles.cardEyebrow}>HEUTE IM BLICK</Text>
-          <Text style={styles.todayWebHeroTitle}>Was steht heute an?</Text>
-        </View>
-      </View>
-      <View style={styles.todayWebMealGrid}>
-        <View style={styles.todayWebMealBlock}>
-          <Text style={styles.cardEyebrow}>ABENDESSEN</Text>
-          <Text style={styles.heroMeal}>{meals[today] || 'Noch nichts geplant'}</Text>
-          <Text style={styles.cardCopy}>{meals[today] ? 'Gemeinsam geplantes Abendessen für heute.' : 'Plane das heutige Abendessen im 4-Wochen-Plan.'}</Text>
-        </View>
-        <View style={[styles.todayWebMealBlock, styles.todayWebMealBlockAccent]}>
-          <Text style={styles.cardEyebrow}>FÜR SASKIA</Text>
-          <Text style={styles.heroMeal}>{saskiaMeals[today] || 'Noch nichts geplant'}</Text>
-          <Text style={styles.cardCopy}>Der eigene Essensplatz für Saskia bleibt separat planbar.</Text>
-        </View>
-      </View>
-      <View style={styles.todayWebActions}>
-        <WebButton label="4-Wochen-Plan öffnen" icon="calendar-arrow-right" onPress={() => onNavigate('woche')} />
-        <WebButton label="Einkauf öffnen" icon="cart-outline" variant="secondary" onPress={() => onNavigate('einkauf')} />
-      </View>
+    <View style={styles.webOverviewHero}>
+      <View style={styles.webOverviewHeading}><View style={styles.flex1}><Text style={styles.webOverviewEyebrow}>DIE NÄCHSTEN 7 TAGE</Text><Text style={styles.webOverviewTitle}>{planned} von 14 Gerichten geplant</Text></View><MaterialCommunityIcons name="calendar-check-outline" size={30} color={colors.onAccent} /></View>
+      <View style={styles.webOverviewTrack}><View style={[styles.webOverviewFill, { width: `${Math.round(planned / 14 * 100)}%` as `${number}%` }]} /></View>
+      <View style={styles.webOverviewDays}>{week.map((day, index) => <Pressable key={day.iso} onPress={() => onNavigate('woche')} style={[styles.webOverviewDay, index === 0 && styles.webOverviewDayCurrent]}>
+        <Text style={[styles.webOverviewDayText, index === 0 && styles.webOverviewDayTextCurrent]}>{day.date.toLocaleDateString('de-AT', { weekday: 'short' }).slice(0, 2)}</Text>
+        <Text style={[styles.webOverviewDayNumber, index === 0 && styles.webOverviewDayTextCurrent]}>{day.date.getDate()}</Text>
+        <View style={styles.webOverviewDots}><View style={[styles.webOverviewDot, day.planned >= 1 && styles.webOverviewDotDone]} /><View style={[styles.webOverviewDot, day.planned >= 2 && styles.webOverviewDotDone]} /></View>
+      </Pressable>)}</View>
     </View>
 
-    <View style={styles.metricGrid}>
-      <Pressable onPress={() => onNavigate('einkauf')} style={[styles.card, styles.metricCard]}><MaterialCommunityIcons name="cart-outline" size={25} color={colors.accent} /><Text style={styles.metricValue}>{openItems}</Text><Text style={styles.metricLabel}>Produkte noch offen{doneItems ? ` · ${doneItems} erledigt` : ''}</Text></Pressable>
-      <Pressable onPress={() => onNavigate('woche')} style={[styles.card, styles.metricCard]}><MaterialCommunityIcons name="calendar-check-outline" size={25} color={colors.accent} /><Text style={styles.metricValue}>{plannedNextSeven}/14</Text><Text style={styles.metricLabel}>Essensplätze der nächsten 7 Tage geplant</Text></Pressable>
-      <View style={[styles.card, styles.metricCard]}><MaterialCommunityIcons name="account-group-outline" size={25} color={colors.accent} /><Text style={styles.metricValue}>{household.members.length}</Text><Text style={styles.metricLabel}>{household.members.length === 1 ? 'Mitglied im Haushalt' : 'Mitglieder im Haushalt'}</Text></View>
+    <View style={styles.webSectionHeading}><Text style={styles.pageTitle}>Heute auf dem Speiseplan</Text><WebButton label="Plan bearbeiten" icon="calendar-outline" variant="secondary" onPress={() => onNavigate('woche')} /></View>
+    <View style={styles.webTodayMeals}>
+      <Pressable onPress={() => onNavigate('woche')} style={[styles.card, styles.webTodayMealCard]}>
+        <View style={styles.webTodayMealTop}><MaterialCommunityIcons name="silverware-fork-knife" size={25} color={colors.accent} /><Text style={styles.cardEyebrow}>ABENDESSEN</Text></View>
+        <Text style={styles.webTodayMealTitle}>{meals[today] || 'Noch kein Gericht geplant'}</Text>
+        <Text style={styles.cardCopy}>{meals[today] ? 'Für heute eingeplant' : 'Gericht auswählen und eintragen'}</Text>
+      </Pressable>
+      <Pressable onPress={() => onNavigate('woche')} style={[styles.card, styles.webTodayMealCard, styles.webTodayMealSaskia]}>
+        <View style={styles.webTodayMealTop}><MaterialCommunityIcons name="account-heart-outline" size={25} color={colors.accent} /><Text style={styles.cardEyebrow}>FÜR SASKIA</Text></View>
+        <Text style={styles.webTodayMealTitle}>{saskiaMeals[today] || 'Noch kein Gericht geplant'}</Text>
+        <Text style={styles.cardCopy}>Separater Essensplatz für Saskia</Text>
+      </Pressable>
     </View>
 
-    <View style={[styles.card, styles.tomorrowWebCard]}>
-      <View style={styles.tomorrowWebDate}><Text style={styles.tomorrowWebDay}>{tomorrowDate.toLocaleDateString('de-AT', { day: '2-digit' })}</Text><Text style={styles.tomorrowWebMonth}>{tomorrowDate.toLocaleDateString('de-AT', { month: 'short' }).replace('.', '').toUpperCase()}</Text></View>
-      <View style={styles.flex1}><Text style={styles.cardEyebrow}>MORGEN</Text><Text style={styles.tomorrowWebMeal}>{meals[tomorrow] || 'Noch kein Abendessen geplant'}</Text>{saskiaMeals[tomorrow] ? <Text style={styles.cardCopy}>Für Saskia: {saskiaMeals[tomorrow]}</Text> : null}</View>
-      <WebButton label="Planen" icon="calendar-plus" variant="secondary" onPress={() => onNavigate('woche')} />
+    <View style={styles.webTodayBottom}>
+      <View style={[styles.card, styles.webTodayPanel]}>
+        <View style={styles.webSectionHeading}><Text style={styles.webTodaySubTitle}>Einkauf</Text><Pressable onPress={() => onNavigate('einkauf')}><Text style={styles.webTodayLink}>Zur Liste →</Text></Pressable></View>
+        <Text style={styles.cardCopy}>{openItems.length} Produkte noch offen</Text>
+        {openItems.slice(0, 4).map((item) => <View key={item.id} style={styles.webShoppingPreview}><MaterialCommunityIcons name="circle-outline" size={17} color={colors.textSecondary} /><Text style={styles.webShoppingName} numberOfLines={1}>{item.name}</Text><Text style={styles.cardCopy}>{item.amount} {item.unit}</Text></View>)}
+        {!openItems.length ? <Text style={styles.cardCopy}>Einkaufsliste erledigt.</Text> : null}
+      </View>
+      <View style={[styles.card, styles.webTodayPanel]}>
+        <Text style={styles.webTodaySubTitle}>Was steht morgen an?</Text>
+        <Text style={styles.cardCopy}>{tomorrow.date.toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: 'long' })}</Text>
+        <Text style={styles.webTodayMealTitle}>{meals[tomorrow.iso] || 'Noch nichts geplant'}</Text>
+        {saskiaMeals[tomorrow.iso] ? <Text style={styles.cardCopy}>Für Saskia: {saskiaMeals[tomorrow.iso]}</Text> : null}
+        <View style={styles.webTodayBottomActions}>
+          <WebButton label="Rezepte entdecken" icon="food-apple-outline" onPress={() => onNavigate('rezepte')} />
+        </View>
+      </View>
     </View>
   </ScrollView>;
 }
@@ -581,6 +582,7 @@ function MainWebApp() {
   const [household, setHousehold] = useState<Household | null>(null);
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const shoppingRevision = useRef(0);
+  const planRevision = useRef(0);
   const updateShoppingItems: React.Dispatch<React.SetStateAction<ShoppingItem[]>> = (update) => {
     shoppingRevision.current += 1;
     setItems(update);
@@ -597,15 +599,20 @@ function MainWebApp() {
     try {
       const shoppingStartVersion = shoppingRevision.current;
       const nextHousehold = await loadHousehold();
-      const [shopping, plan] = await Promise.all([loadShopping(), loadMealPlan()]);
       setHousehold(nextHousehold);
-      if (shoppingStartVersion === shoppingRevision.current) {
-        shoppingRevision.current += 1;
-        setItems(shopping);
-      }
-      setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
-      setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
+      setLoading(false);
       setError('');
+      const planStartVersion = planRevision.current;
+      const [shoppingResult, planResult] = await Promise.allSettled([loadShopping(), loadMealPlan()]);
+      if (shoppingResult.status === 'fulfilled' && shoppingStartVersion === shoppingRevision.current) {
+        shoppingRevision.current += 1;
+        setItems(shoppingResult.value);
+      }
+      if (planResult.status === 'fulfilled' && planStartVersion === planRevision.current) {
+        const plan = planResult.value;
+        setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
+        setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
+      }
     } catch (e: any) {
       setError(e?.message || 'MealFlow konnte nicht geladen werden.');
     } finally {
@@ -649,15 +656,31 @@ function MainWebApp() {
 
     const channel = supabase.channel(`mealflow-web-${household.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, applyShoppingRealtime)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, () => loadMealPlan().then((plan) => { setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? '']))); setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? '']))); }).catch(() => undefined))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter }, (payload: any) => {
+         ++planRevision.current;
+         const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
+         const date = typeof row?.planned_date === 'string' ? row.planned_date : '';
+         if (!date) return;
+         setMeals((current) => ({ ...current, [date]: payload.eventType === 'DELETE' ? '' : String(row.meal ?? '') }));
+         setSaskiaMeals((current) => ({ ...current, [date]: payload.eventType === 'DELETE' ? '' : String(row.meal_saskia ?? '') }));
+       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'household_members', filter }, () => loadHousehold().then(setHousehold).catch(() => undefined))
       .subscribe((status) => {
         // Catch events missed during disconnects without delaying live events.
-        if (status === 'SUBSCRIBED') catchUpShopping();
+        if (status === 'SUBSCRIBED') {
+           catchUpShopping();
+           const request = ++planRevision.current;
+           loadMealPlan().then((plan) => {
+             if (disposed || request !== planRevision.current) return;
+             setMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.meal ?? ''])));
+             setSaskiaMeals(Object.fromEntries(plan.map((entry) => [entry.plannedDate, entry.mealSaskia ?? ''])));
+           }).catch(() => undefined);
+         }
       });
     return () => {
       disposed = true;
       shoppingRevision.current += 1;
+      planRevision.current += 1;
       supabase.removeChannel(channel);
     };
   }, [household?.id]);
@@ -682,8 +705,20 @@ function MainWebApp() {
     savePreferences(prefs).catch(() => undefined);
   };
 
-  if (loading) return <View style={styles.loadingRoot}><WebBrandMark size={82} /><Text style={styles.loadingTitle}>MealFlow wird vorbereitet</Text><Text style={styles.loadingCopy}>Haushalt, Einkauf und 4-Wochen-Plan werden synchronisiert …</Text><View style={styles.webLoadingTrack}><View style={styles.webLoadingFill} /></View><Text style={styles.webLoadingMeta}>MealFlow {APP_VERSION}</Text></View>;
-  if (error || !household) return <View style={styles.loadingRoot}><MaterialCommunityIcons name="cloud-alert-outline" size={42} color={colors.danger} /><Text style={styles.loadingTitle}>MealFlow konnte nicht starten</Text><Text style={styles.loadingCopy}>{error || 'Kein aktiver Haushalt gefunden.'}</Text><WebButton label="Erneut versuchen" onPress={() => { setLoading(true); void refresh(); }} /></View>;
+  if (!household) return <View style={styles.appRoot}>
+    <View style={styles.mainArea}>
+      <ScrollView contentContainerStyle={styles.pageContent}>
+        <Text style={styles.eyebrow}>MEALFLOW</Text>
+        <Text style={styles.pageTitle}>Willkommen bei MealFlow</Text>
+        <View style={[styles.card, { padding: 22, gap: 12 }]}>
+          <MaterialCommunityIcons name={error ? 'cloud-alert-outline' : 'home-heart'} size={30} color={colors.accent} />
+          <Text style={styles.cardEyebrow}>{error ? 'VERBINDUNGSPROBLEM' : 'HAUSHALT VERBINDEN'}</Text>
+          <Text style={styles.pageSubtitle}>{error || 'Dein Dashboard ist bereit. Wir verbinden gerade deinen Haushalt und synchronisieren deine Daten.'}</Text>
+          {error ? <WebButton label="Erneut versuchen" icon="refresh" onPress={() => { setLoading(true); void refresh(); }} /> : null}
+        </View>
+      </ScrollView>
+    </View>
+  </View>;
 
   const content = tab === 'heute'
     ? <HomeScreen household={household} items={items} meals={meals} saskiaMeals={saskiaMeals} onNavigate={navigate} onSettings={() => setSettingsOpen(true)} />
@@ -691,7 +726,7 @@ function MainWebApp() {
       ? <PlanScreen household={household} meals={meals} saskiaMeals={saskiaMeals} onChanged={refresh} onSettings={() => setSettingsOpen(true)} />
       : tab === 'einkauf'
         ? <ShoppingScreen household={household} items={items} setItems={updateShoppingItems} onSettings={() => setSettingsOpen(true)} />
-        : <NotesScreen household={household} onSettings={() => setSettingsOpen(true)} />;
+        : <ProteinRecipesScreen onSettings={() => setSettingsOpen(true)} onGoShopping={() => navigate('einkauf')} onPlanChanged={(date, title) => { ++planRevision.current; setMeals((current) => ({ ...current, [date]: title })); }} />;
 
   return <View style={styles.appRoot}>
     {desktop ? <Sidebar tab={tab} onTab={navigate} household={household} onSettings={() => setSettingsOpen(true)} /> : null}
@@ -710,7 +745,7 @@ function Root() {
     const { data } = supabase.auth.onAuthStateChange((_event, session) => { if (!session) clearHouseholdCache(); setAuthenticated(Boolean(session)); setChecking(false); });
     return () => data.subscription.unsubscribe();
   }, []);
-  if (checking) return <View style={styles.loadingRoot}><WebBrandMark size={74} /><Text style={styles.loadingTitle}>MealFlow</Text><Text style={styles.loadingCopy}>Anmeldung wird geprüft …</Text><View style={styles.webLoadingTrack}><View style={styles.webLoadingFill} /></View></View>;
+  if (checking) return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   if (!isCloudConfigured) return <View style={styles.loadingRoot}><Text style={styles.loadingTitle}>Cloud-Verbindung fehlt</Text></View>;
   return authenticated ? <MainWebApp /> : <AuthScreen />;
 }
@@ -748,6 +783,9 @@ function createStyles() {
     pageSubtitle: { ...typography.body, color: colors.textSecondary, maxWidth: 720, marginTop: 4 },
     webBrandShell: { backgroundColor: '#173F2C', alignItems: 'center', justifyContent: 'center' },
     webBrandAccent: { position: 'absolute', backgroundColor: '#BFE3A5' },
+    webOverviewHero: { backgroundColor: colors.accent, borderRadius: radius.xl, padding: 24, gap: 16 }, webOverviewHeading: { flexDirection: 'row', alignItems: 'center', gap: 15 }, webOverviewEyebrow: { ...typography.label, color: colors.onAccent, opacity: 0.8 }, webOverviewTitle: { ...typography.h2, color: colors.onAccent, marginTop: 5 }, webOverviewTrack: { height: 7, backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 4, overflow: 'hidden' }, webOverviewFill: { height: 7, backgroundColor: colors.onAccent, borderRadius: 4 },
+    webOverviewDays: { flexDirection: 'row', gap: 7 }, webOverviewDay: { flex: 1, minHeight: 78, backgroundColor: 'rgba(255,255,255,0.13)', borderRadius: 14, alignItems: 'center', justifyContent: 'center', gap: 5 }, webOverviewDayCurrent: { backgroundColor: colors.onAccent }, webOverviewDayText: { ...typography.caption, color: colors.onAccent }, webOverviewDayNumber: { ...typography.title, color: colors.onAccent }, webOverviewDayTextCurrent: { color: colors.accent }, webOverviewDots: { flexDirection: 'row', gap: 4 }, webOverviewDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' }, webOverviewDotDone: { backgroundColor: colors.onAccent },
+    webSectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }, webTodayMeals: { flexDirection: 'row', gap: 16, flexWrap: 'wrap' }, webTodayMealCard: { flexGrow: 1, flexBasis: 290, padding: 24, minHeight: 175, gap: 12 }, webTodayMealSaskia: { backgroundColor: colors.accentSoft }, webTodayMealTop: { flexDirection: 'row', alignItems: 'center', gap: 10 }, webTodayMealTitle: { ...typography.h2, color: colors.text }, webTodayBottom: { flexDirection: 'row', gap: 16, flexWrap: 'wrap' }, webTodayPanel: { flexGrow: 1, flexBasis: 300, padding: 23, gap: 12 }, webTodaySubTitle: { ...typography.title, color: colors.text }, webTodayLink: { ...typography.caption, color: colors.accent, fontWeight: '800' }, webShoppingPreview: { flexDirection: 'row', gap: 10, alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, paddingVertical: 8 }, webShoppingName: { flex: 1, ...typography.body, color: colors.text }, webTodayBottomActions: { paddingTop: 10 },
     heroGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
     card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
     heroCard: { flexGrow: 1, flexBasis: 420, minWidth: 280, padding: 22, gap: 10 },
