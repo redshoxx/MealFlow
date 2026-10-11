@@ -94,7 +94,7 @@ export function MealPlanOverviewScreen({ household, meals, saskiaMeals, onSave, 
   </Modal>
  </View>;
 }
-const s=StyleSheet.create({
+function createStyles() { return StyleSheet.create({
  root:{flex:1,backgroundColor:colors.background},
  page:{paddingHorizontal:16,paddingTop:16,paddingBottom:90,gap:13,width:'100%',maxWidth:960,alignSelf:'center'},
  flex:{flex:1,minWidth:0},top:{flexDirection:'row',alignItems:'center',gap:12,marginBottom:3},
@@ -124,4 +124,6 @@ const s=StyleSheet.create({
  save:{minHeight:50,borderRadius:9,backgroundColor:colors.accent,alignItems:'center',justifyContent:'center'},
  saveText:{...typography.bodyStrong,color:colors.onAccent},remove:{minHeight:44,alignItems:'center',justifyContent:'center'},
  removeText:{...typography.bodyStrong,color:colors.danger},error:{...typography.caption,color:colors.danger}
-});
+}); }
+let s=createStyles();
+export function refreshMealPlanOverviewStyles() { s=createStyles(); }
