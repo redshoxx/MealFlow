@@ -43,7 +43,7 @@ export function TodayOverviewScreen({ household, items, meals, saskiaMeals, onNa
    <Pressable onPress={() => onNavigate('rezepte')} style={s.action}><MaterialCommunityIcons name="book-open-page-variant-outline" size={20} color={colors.accent}/><Text style={s.actionText}>Rezepte aus echten Quellen entdecken →</Text></Pressable>
  </ScrollView>;
 }
-const s=StyleSheet.create({
+function createStyles() { return StyleSheet.create({
  page:{paddingHorizontal:16,paddingTop:18,paddingBottom:90,gap:13,maxWidth:960,width:'100%',alignSelf:'center'},
  flex:{flex:1,minWidth:0},header:{flexDirection:'row',gap:12,alignItems:'center',marginBottom:9},
  eyebrow:{...typography.label,color:colors.accent,marginBottom:6},title:{fontSize:29,lineHeight:35,color:colors.text,fontWeight:'800'},
@@ -65,4 +65,6 @@ const s=StyleSheet.create({
  shopping:{flexDirection:'row',alignItems:'center',gap:9,minHeight:37,paddingHorizontal:12},
  flexText:{...typography.body,color:colors.text,flex:1},amount:{...typography.caption,color:colors.textSecondary},
  empty:{...typography.body,color:colors.textSecondary,padding:15}
-});
+}); }
+let s=createStyles();
+export function refreshTodayOverviewStyles() { s=createStyles(); }
