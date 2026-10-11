@@ -361,15 +361,12 @@ function SheetDismissHandle({ onClose }: { onClose: () => void }) {
 }
 
 function MealFlowBrandMark({ size = 72 }: { size?: number }) {
-  const plateSize = Math.round(size * 0.62);
-  const checkSize = Math.round(size * 0.30);
-  const accentSize = Math.max(10, Math.round(size * 0.17));
-  return <View style={[styles.brandLogoShell, { width: size, height: size, borderRadius: Math.round(size * 0.29) }]}>
-    <View style={{ width: plateSize, height: plateSize, borderRadius: Math.round(plateSize / 2), backgroundColor: '#F7F5EC', alignItems: 'center', justifyContent: 'center' }}>
-      <MaterialCommunityIcons name="check-bold" size={checkSize} color="#214F33" />
-    </View>
-    <View style={[styles.brandLogoAccent, { width: accentSize, height: accentSize, borderRadius: Math.round(accentSize / 2), right: Math.round(size * 0.10), top: Math.round(size * 0.09) }]} />
-  </View>;
+  return <Image
+    source={require('./assets/icon.png')}
+    resizeMode="contain"
+    style={{ width: size, height: size, borderRadius: Math.round(size * 0.24) }}
+    accessibilityLabel="MealFlow Logo"
+  />;
 }
 
 function LoadingScreen({ message = 'MealFlow wird vorbereitet …', progress = 0 }: { message?: string; progress?: number }) {
@@ -467,7 +464,7 @@ function AuthScreen() {
         <MealFlowBrandMark size={62} />
         <Text style={styles.authBrand}>MealFlow</Text>
         <Text style={styles.authHero}>Gemeinsam planen. Gezielt einkaufen. Besser kochen.</Text>
-        <Text style={styles.authSubtitle}>Wochenplan, Einkaufsliste und persönliche Notizen – synchron auf iPhone und Android.</Text>
+        <Text style={styles.authSubtitle}>Wochenplan, Einkaufsliste und gesunde Rezepte – synchron auf iPhone und Android.</Text>
         <SurfaceCard style={styles.authCard}>
           <View style={styles.segmentedControl}>
             <Pressable onPress={() => setMode('signin')} style={[styles.segmentButton, mode === 'signin' && styles.segmentButtonActive]}><Text style={[styles.segmentText, mode === 'signin' && styles.segmentTextActive]}>Anmelden</Text></Pressable>
@@ -689,7 +686,7 @@ function SettingsSheet({
     { key: 'heute', label: 'Heute' },
     { key: 'woche', label: 'Woche' },
     { key: 'einkauf', label: 'Einkauf' },
-    { key: 'notizen', label: 'Notizen' },
+    { key: 'rezepte', label: 'Rezepte' },
   ];
 
   return (
