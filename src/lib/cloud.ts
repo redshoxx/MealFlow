@@ -362,12 +362,12 @@ export async function loadMealPlan(): Promise<MealDay[]> {
   const householdId = await getActiveHouseholdId();
   const now = new Date();
   now.setHours(12, 0, 0, 0);
-  const from = new Date(now);
-  from.setDate(now.getDate() - 1);
-  const nextMonday = new Date(now);
-  nextMonday.setDate(now.getDate() - ((now.getDay() + 6) % 7) + 7);
-  const until = new Date(nextMonday);
-  until.setDate(nextMonday.getDate() + 27);
+  // Fetch the exact four visible calendar weeks, including earlier days of this week.
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+  const from = new Date(monday);
+  const until = new Date(monday);
+  until.setDate(monday.getDate() + 27);
   const toIso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const { data, error } = await supabase
     .from('meal_plan_entries')
