@@ -179,9 +179,16 @@ export async function searchRecipePage(query: string, filters: RecipeFilters = {
   const safePage = Math.max(0, page);
 
   if (!clean) {
-    const web = await searchWeb(POPULAR_WEB_QUERY, filters, safePage);
+    const [webResult, providerResult] = await Promise.allSettled([
+      searchWeb(POPULAR_WEB_QUERY, filters, safePage),
+      safePage === 0 ? searchTheMealDb('pasta') : Promise.resolve([] as Recipe[]),
+    ]);
+    const web = webResult.status === 'fulfilled'
+      ? webResult.value
+      : { recipes: [] as Recipe[], hasMore: false, configured: false };
+    const provider = providerResult.status === 'fulfilled' ? providerResult.value : [];
     return {
-      recipes: applyFilters(dedupe(web.recipes), filters),
+      recipes: applyFilters(dedupe([...web.recipes, ...provider]), filters),
       page: safePage,
       hasMore: web.hasMore,
       webConfigured: web.configured,
