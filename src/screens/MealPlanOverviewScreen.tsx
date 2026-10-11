@@ -117,7 +117,7 @@ function createStyles() { return StyleSheet.create({
  meal:{minHeight:70,padding:12,paddingHorizontal:14,flexDirection:'row',alignItems:'center',gap:10},
  saskiaMeal:{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:colors.border,backgroundColor:colors.surfaceMuted},
  mealValue:{fontSize:17,lineHeight:23,color:colors.text,fontWeight:'700'},empty:{fontWeight:'500',color:colors.textTertiary},
- modal:{flex:1,justifyContent:'flex-end'},overlay:{...StyleSheet.absoluteFillObject,backgroundColor:'rgba(0,0,0,0.22)'},
+ modal:{flex:1,justifyContent:'flex-end'},overlay:{...StyleSheet.absoluteFill,backgroundColor:'rgba(0,0,0,0.22)'},
  sheet:{backgroundColor:colors.surface,borderTopLeftRadius:13,borderTopRightRadius:13,paddingHorizontal:18,paddingTop:18,gap:13},
  sheetHeader:{flexDirection:'row',alignItems:'center',gap:12},sheetTitle:{fontSize:20,fontWeight:'800',color:colors.text},
  input:{minHeight:52,borderRadius:9,borderWidth:1,borderColor:colors.border,paddingHorizontal:14,fontSize:17,color:colors.text},
