@@ -1,3 +1,16 @@
+## 2.4.0
+
+- Kein vorgeschalteter Ladebildschirm: App-Oberfläche wird sofort angezeigt, Haushaltsdaten folgen progressiv.
+- Neues MealFlow-Symbol mit klar erkennbarem Schüssel-/Blatt-Motiv für iOS, Android und Web.
+- Heute-Dashboard komplett neu strukturiert: sieben Tage, zwei Gerichte pro Tag, Einkaufsvorschau und Rezept-Schnellzugriff.
+- Notizen in der Hauptnavigation durch **Protein & gesunde Rezepte** ersetzt.
+- Zehn direkt verfügbare gesunde Rezepte mit Zutaten, Anleitung, ungefähren Nährwerten und Such-/Filteroptionen.
+- Rezepte können als Abendessen in den Wochenplan übernommen werden; Zutaten lassen sich zur gemeinsamen Einkaufsliste hinzufügen.
+- Supabase-Wochenplan-Änderungen werden ohne verzögerten Vollabruf direkt per Realtime angezeigt.
+- Reconnect-Abgleich und Race-Schutz verhindern veraltete Wochenplanstände; vollständige vier Wochen werden geladen.
+- Bestehende Notizdaten bleiben in Supabase erhalten.
+- Version 2.4.0, iOS Build 34, Android Version Code 34.
+
 ## 2.3.9
 
 - Einkaufsliste auf iPhone, Android und Web sofort lokal aktualisieren (Hinzufügen, Bearbeiten, Abhaken, Löschen).
