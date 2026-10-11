@@ -1,6 +1,6 @@
 {
   "name": "mealflow",
-  "version": "2.3.9",
+  "version": "2.4.0",
   "description": "MealFlow – gemeinsame Essensplanung, Einkauf und persönliche Notizen.",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
@@ -9,7 +9,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "build:web": "expo export --platform web --output-dir dist",
+    "build:web": "npm run generate:icon && expo export --platform web --output-dir dist",
     "typecheck": "tsc --noEmit",
     "generate:icon": "node scripts/generate-app-icon.cjs",
     "prebuild:ios": "expo prebuild --platform ios --clean --no-install",
