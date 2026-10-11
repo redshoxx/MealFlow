@@ -37,6 +37,8 @@ import {
 import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';
 import { isCloudConfigured, supabase } from './src/lib/supabase';
 import { ProteinRecipesScreen, refreshProteinRecipeStyles } from './src/screens/ProteinRecipesScreen';
+import { TodayOverviewScreen, refreshTodayOverviewStyles } from './src/screens/TodayOverviewScreen';
+import { MealPlanOverviewScreen, refreshMealPlanOverviewStyles } from './src/screens/MealPlanOverviewScreen';
 import { refreshUiComponentStyles } from './src/ui/components';
 import { colors, radius, setThemePalette, spacing, typography } from './src/ui/theme';
 import appConfig from './app.json';
@@ -168,6 +170,8 @@ function applyTheme(preferences: AppPreferences) {
   styles = createStyles();
   refreshUiComponentStyles();
   refreshProteinRecipeStyles();
+  refreshTodayOverviewStyles();
+  refreshMealPlanOverviewStyles();
   return dark;
 }
 
@@ -719,9 +723,9 @@ function MainWebApp() {
   </View>;
 
   const content = tab === 'heute'
-    ? <HomeScreen household={household} items={items} meals={meals} saskiaMeals={saskiaMeals} onNavigate={navigate} onSettings={() => setSettingsOpen(true)} />
+    ? <TodayOverviewScreen household={household} items={items} meals={meals} saskiaMeals={saskiaMeals} onNavigate={navigate} onSettings={() => setSettingsOpen(true)} />
     : tab === 'woche'
-      ? <PlanScreen household={household} meals={meals} saskiaMeals={saskiaMeals} onChanged={refresh} onSettings={() => setSettingsOpen(true)} />
+      ? <MealPlanOverviewScreen household={household} meals={meals} saskiaMeals={saskiaMeals} onSettings={() => setSettingsOpen(true)} onSave={async (date, slot, title) => { if (slot === 'saskia') await saveSaskiaMeal(date, title || null); else await saveMeal(date, title || null); await refresh(); }} />
       : tab === 'einkauf'
         ? <ShoppingScreen household={household} items={items} setItems={updateShoppingItems} onSettings={() => setSettingsOpen(true)} />
         : <ProteinRecipesScreen onSettings={() => setSettingsOpen(true)} onGoShopping={() => navigate('einkauf')} onPlanChanged={(date, title) => { ++planRevision.current; setMeals((current) => ({ ...current, [date]: title })); }} />;
