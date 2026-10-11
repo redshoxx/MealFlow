@@ -62,6 +62,8 @@ import { ActionButton, EmptyState, IconButton, refreshUiComponentStyles, ScreenH
 import { colors, getShadow, radius, setThemePalette, spacing, typography } from './src/ui/theme';
 import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferences, type StartTab, type ThemeMode } from './src/lib/preferences';
 import { ProteinRecipesScreen, refreshProteinRecipeStyles } from './src/screens/ProteinRecipesScreen';
+import { TodayOverviewScreen, refreshTodayOverviewStyles } from './src/screens/TodayOverviewScreen';
+import { MealPlanOverviewScreen, refreshMealPlanOverviewStyles } from './src/screens/MealPlanOverviewScreen';
 import { checkAndPromptAndroidUpdate } from './src/lib/androidUpdater';
 import appConfig from './app.json';
 
@@ -1666,8 +1668,8 @@ function MainApp() {
     <View style={[styles.appRoot, { paddingTop: insets.top }]}>
       <StatusBar style={darkMode ? 'light' : 'dark'} />
       <View style={styles.screenArea}>
-        {tab === 'heute' ? <HomeScreen household={household} meals={meals} saskiaMeals={saskiaMeals} items={items} history={history} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} /> : null}
-        {tab === 'woche' ? <PlanScreen household={household} meals={meals} saskiaMeals={saskiaMeals} setMeals={setMeals} setSaskiaMeals={setSaskiaMeals} onPlanEdit={() => { ++planLoadGeneration.current; }} onSettings={() => setSettingsOpen(true)} /> : null}
+        {tab === 'heute' ? <TodayOverviewScreen household={household} meals={meals} saskiaMeals={saskiaMeals} items={items} onNavigate={changeTab} onSettings={() => setSettingsOpen(true)} onCooked={markCooked} cooked={Boolean(meals[todayIso()] && history.some((entry) => entry.cookedOn === todayIso() && normalizeTitle(entry.recipeTitle) === normalizeTitle(meals[todayIso()] ?? '')))} /> : null}
+        {tab === 'woche' ? <MealPlanOverviewScreen household={household} meals={meals} saskiaMeals={saskiaMeals} onSettings={() => setSettingsOpen(true)} onSave={async (date, slot, title) => { if (slot === 'saskia') { await saveSaskiaMeal(date, title || null); setSaskiaMeals((current) => ({ ...current, [date]: title })); } else { await saveMeal(date, title || null); setMeals((current) => ({ ...current, [date]: title })); } ++planLoadGeneration.current; }} /> : null}
         {tab === 'einkauf' ? <ShoppingScreen household={household} items={items} setItems={setShoppingOptimistic} preferences={preferences} onSettings={() => setSettingsOpen(true)} /> : null}
         {tab === 'rezepte' ? <ProteinRecipesScreen onSettings={() => setSettingsOpen(true)} onGoShopping={() => changeTab('einkauf')} onPlanChanged={(date, title) => { ++planLoadGeneration.current; setMeals((current) => ({ ...current, [date]: title })); }} /> : null}
       </View>
@@ -1888,5 +1890,7 @@ function refreshAppStyles() {
   styles = createStyles();
   refreshUiComponentStyles();
   refreshProteinRecipeStyles();
+  refreshTodayOverviewStyles();
+  refreshMealPlanOverviewStyles();
 }
 
