@@ -22,7 +22,7 @@ import {
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 type Palette = { background: string; card: string; soft: string; input: string; text: string; muted: string; border: string; olive: string; oliveDeep: string; accentSoft: string; gold: string; pill: string; nav: string };
 type Page = 'gerichte' | 'woche' | 'einkauf' | 'einstellungen';
-const PALETTES: Record<string, Palette> = {
+const PALETTES: Record<'normal' | 'cozy' | 'dark' | 'cozyDark', Palette> = {
   normal: { background: '#F9F7F2', card: '#FFFDF9', soft: '#F0EEE6', input: '#F5F2EC', text: '#24271E', muted: '#7A796F', border: '#EAE5DB', olive: '#56683D', oliveDeep: '#3B4C2A', accentSoft: '#E5EBD9', gold: '#B98148', pill: '#F1E9DD', nav: '#FFFDF8' },
   cozy: { background: '#F9EBDD', card: '#FFF7EC', soft: '#F4E4D2', input: '#F5E8D7', text: '#3C3025', muted: '#887563', border: '#E9D4BE', olive: '#607040', oliveDeep: '#48572E', accentSoft: '#E6E9D4', gold: '#BB814B', pill: '#F5DFC8', nav: '#FFF2E3' },
   dark: { background: '#171914', card: '#22251E', soft: '#2B3025', input: '#30352A', text: '#F2EEE5', muted: '#B8B9AC', border: '#394035', olive: '#889A6B', oliveDeep: '#5B754A', accentSoft: '#374431', gold: '#D7A16F', pill: '#383629', nav: '#22251E' },
@@ -296,7 +296,7 @@ export default function MealFlowNext() {
       <View style={s.weekToolbar}>
         <IconButton name="chevron-left" label="Vorige Woche" c={c} onPress={() => moveWeek(-1)} />
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={[s.weekDate, { color: c.text }]}>{dateText(dates[0])} – {dateText(dates[6])}</Text>
+          <Text style={[s.weekDate, { color: c.text }]}>{dateText(dates[0]!)} – {dateText(dates[6]!)}</Text>
           <Text style={[s.tiny, { color: c.muted }]}>{plannedCount} Gerichte geplant</Text>
         </View>
         <IconButton name="chevron-right" label="Nächste Woche" c={c} onPress={() => moveWeek(1)} />
@@ -340,7 +340,7 @@ export default function MealFlowNext() {
           </Pressable> : null}
         </View>;
       })}
-      <SolidButton label="Gericht aus meiner Sammlung" icon="plus" c={c} onPress={() => openPlan(iso(dates.find(d => iso(d) >= iso(new Date())) ?? dates[0]))} />
+      <SolidButton label="Gericht aus meiner Sammlung" icon="plus" c={c} onPress={() => openPlan(iso(dates.find(d => iso(d) >= iso(new Date())) ?? dates[0]!))} />
     </>;
 
     if (page === 'einkauf') return <>
@@ -348,9 +348,9 @@ export default function MealFlowNext() {
       <View style={[s.progressBox, { backgroundColor: c.card, borderColor: c.border }]}>
         <View style={s.progressLabels}><Text style={[s.smallText, { color: c.text, fontWeight: '700' }]}>Einkaufsfortschritt</Text><Text style={[s.tiny, { color: c.muted }]}>{shoppingDone} von {grouped.items.length} erledigt</Text></View>
         <View style={[s.progressRail, { backgroundColor: c.soft }]}><View style={[s.progressFill, { backgroundColor: c.olive, width: (grouped.items.length ? shoppingDone / grouped.items.length * 100 : 0) + '%' as any }]} /></View>
-        <Text style={[s.tiny, { color: c.muted, marginTop: 7 }]}>Woche: {dateText(dates[0])} – {dateText(dates[6])}</Text>
+        <Text style={[s.tiny, { color: c.muted, marginTop: 7 }]}>Woche: {dateText(dates[0]!)} – {dateText(dates[6]!)}</Text>
       </View>
-      {grouped.missing.length ? <Pressable onPress={() => { setPage('gerichte'); setSearch(grouped.missing[0]); }} style={[s.notice, { backgroundColor: c.pill }]}>
+      {grouped.missing.length ? <Pressable onPress={() => { setPage('gerichte'); setSearch(grouped.missing[0] ?? ''); }} style={[s.notice, { backgroundColor: c.pill }]}>
         <MIcon name="information-outline" color={c.gold} size={20} />
         <Text style={[s.smallText, { color: c.text, flex: 1 }]}>{grouped.missing.length} Gericht(en) fehlen noch Zutaten. Tippe hier zum Ergänzen.</Text>
       </Pressable> : null}
