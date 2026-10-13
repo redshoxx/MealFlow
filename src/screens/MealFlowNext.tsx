@@ -592,7 +592,7 @@ const s = StyleSheet.create({
   settingsCard: { borderRadius: 17, borderWidth: 1, padding: 17 },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   settingIcon: { borderRadius: 15, width: 52, height: 52, alignItems: 'center', justifyContent: 'center' },
-  settingTitle: { fontSize: 14, fontWeight: '750' },
+  settingTitle: { fontSize: 14, fontWeight: '700' },
   segment: { padding: 4, borderRadius: 13, flexDirection: 'row', gap: 3 },
   segmentItem: { flex: 1, minHeight: 37, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
   invite: { fontSize: 21, fontWeight: '700', letterSpacing: 2, textAlign: 'center', padding: 14, borderRadius: 12 },
