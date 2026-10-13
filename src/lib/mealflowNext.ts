@@ -168,7 +168,20 @@ export async function loadWeek(start: Date): Promise<PlannedDay[]> {
   const { data, error } = await supabase.from('meal_plan_entries')
     .select('planned_date,meal,meal_saskia,meal_portions,meal_saskia_portions').eq('household_id', householdId)
     .gte('planned_date', iso(days[0]!)).lte('planned_date', iso(days[6]!));
-  if (error) throw error;
+  if (error) {
+    // Backward compatible read while the optional portions migration is pending.
+    if (error.code !== '42703' && error.code !== 'PGRST204' && error.code !== 'PGRST205') throw error;
+    const legacy = await supabase.from('meal_plan_entries').select('planned_date,meal,meal_saskia')
+      .eq('household_id', householdId)
+      .gte('planned_date', iso(days[0]!)).lte('planned_date', iso(days[6]!));
+    if (legacy.error) throw legacy.error;
+    return (legacy.data ?? []).map((row: any) => ({
+      plannedDate: String(row.planned_date),
+      meal: row.meal ? String(row.meal) : null,
+      mealSaskia: row.meal_saskia ? String(row.meal_saskia) : null,
+      mealPortions: 2, mealSaskiaPortions: 2
+    }));
+  }
   return (data ?? []).map((row: any) => ({
     plannedDate: String(row.planned_date),
     meal: row.meal ? String(row.meal) : null,
@@ -176,7 +189,25 @@ export async function loadWeek(start: Date): Promise<PlannedDay[]> {
     mealPortions: Number(row.meal_portions ?? 2), mealSaskiaPortions: Number(row.meal_saskia_portions ?? 2)
   }));
 }
-export function weeklyGroceries(days: PlannedDay[], recipes: Dish[], saved: ShoppingItem[]): { items: Grocery[]; missing: string[] } {
+export type WeeklyCheckState = { available: boolean; checked: Record<string, boolean> };
+export async function loadWeeklyChecks(start: Date): Promise<WeeklyCheckState> {
+  const householdId = await getActiveHouseholdId();
+  const { data, error } = await supabase.from('mealflow_weekly_checks')
+    .select('ingredient_key,done').eq('household_id', householdId).eq('week_start', iso(start));
+  if (error) {
+    // Until the additive migration is deployed, shopping still works with legacy items.
+    if (error.code === '42P01' || error.code === 'PGRST205') return { available: false, checked: {} };
+    throw error;
+  }
+  return { available: true, checked: Object.fromEntries((data ?? []).map((row: any) => [String(row.ingredient_key), Boolean(row.done)])) };
+}
+export async function updateWeeklyCheck(start: Date, key: string, done: boolean): Promise<void> {
+  const householdId = await getActiveHouseholdId();
+  const { error } = await supabase.from('mealflow_weekly_checks')
+    .upsert({ household_id: householdId, week_start: iso(start), ingredient_key: key, done, updated_at: new Date().toISOString() }, { onConflict: 'household_id,week_start,ingredient_key' });
+  if (error) throw error;
+}
+export function weeklyGroceries(days: PlannedDay[], recipes: Dish[], saved: ShoppingItem[], weekly?: WeeklyCheckState): { items: Grocery[]; missing: string[] } {
   const recipeMap = new Map(recipes.map((r) => [normalize(r.title), r]));
   const generated = new Map<string, Grocery>();
   const missing = new Set<string>();
@@ -201,7 +232,8 @@ export function weeklyGroceries(days: PlannedDay[], recipes: Dish[], saved: Shop
   for (const item of generated.values()) {
     // An already stored item represents the checkable state. Never silently duplicate it.
     const matching = saved.find((candidate) => normalize(candidate.name) + '|' + candidate.unit === item.key && !matched.has(candidate.id));
-    if (matching) { item.saved = matching; item.done = matching.done; matched.add(matching.id); }
+    if (matching) { item.saved = matching; matched.add(matching.id); }
+    item.done = weekly?.available ? Boolean(weekly.checked[item.key]) : Boolean(matching?.done);
     list.push(item);
   }
   for (const item of saved) {
