@@ -2,7 +2,7 @@ import { getActiveHouseholdId, type OwnRecipe, type ShoppingItem } from './cloud
 import { supabase } from './supabase';
 
 export type MealSlot = 'main' | 'saskia';
-export type PlannedDay = { plannedDate: string; meal: string | null; mealSaskia: string | null };
+export type PlannedDay = { plannedDate: string; meal: string | null; mealSaskia: string | null; mealPortions: number; mealSaskiaPortions: number };
 export type Dish = OwnRecipe & {
   source: 'saved' | 'planned' | 'catalog';
   category: string;
@@ -166,13 +166,14 @@ export async function loadWeek(start: Date): Promise<PlannedDay[]> {
   const householdId = await getActiveHouseholdId();
   const days = weekDates(start);
   const { data, error } = await supabase.from('meal_plan_entries')
-    .select('planned_date,meal,meal_saskia').eq('household_id', householdId)
+    .select('planned_date,meal,meal_saskia,meal_portions,meal_saskia_portions').eq('household_id', householdId)
     .gte('planned_date', iso(days[0])).lte('planned_date', iso(days[6]));
   if (error) throw error;
   return (data ?? []).map((row: any) => ({
     plannedDate: String(row.planned_date),
     meal: row.meal ? String(row.meal) : null,
-    mealSaskia: row.meal_saskia ? String(row.meal_saskia) : null
+    mealSaskia: row.meal_saskia ? String(row.meal_saskia) : null,
+    mealPortions: Number(row.meal_portions ?? 2), mealSaskiaPortions: Number(row.meal_saskia_portions ?? 2)
   }));
 }
 export function weeklyGroceries(days: PlannedDay[], recipes: Dish[], saved: ShoppingItem[]): { items: Grocery[]; missing: string[] } {
@@ -180,7 +181,7 @@ export function weeklyGroceries(days: PlannedDay[], recipes: Dish[], saved: Shop
   const generated = new Map<string, Grocery>();
   const missing = new Set<string>();
   for (const day of days) {
-    for (const title of [day.meal, day.mealSaskia]) {
+    for (const [title, portions] of [[day.meal, day.mealPortions], [day.mealSaskia, day.mealSaskiaPortions]] as const) {
       if (!title) continue;
       const recipe = recipeMap.get(normalize(title));
       if (!recipe || recipe.ingredients.length === 0) { missing.add(title); continue; }
@@ -189,8 +190,9 @@ export function weeklyGroceries(days: PlannedDay[], recipes: Dish[], saved: Shop
         if (!ingredient) continue;
         const key = normalize(ingredient.name) + '|' + ingredient.unit;
         const old = generated.get(key);
-        if (old) old.amount += ingredient.amount;
-        else generated.set(key, { key, name: ingredient.name, amount: ingredient.amount, unit: ingredient.unit, done: false, source: 'planned' });
+        const scaled = ingredient.amount * Math.max(1, portions || 2) / Math.max(1, recipe.servings);
+        if (old) old.amount += scaled;
+        else generated.set(key, { key, name: ingredient.name, amount: scaled, unit: ingredient.unit, done: false, source: 'planned' });
       }
     }
   }
