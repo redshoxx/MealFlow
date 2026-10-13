@@ -1,3 +1,10 @@
+## 2.5.1 — Rückkehr zum bisherigen Design
+
+- Das bekannte MealFlow-Design und alle Funktionen von Version 2.4.1 sind wiederhergestellt.
+- Neue Release-Versionsnummer, damit SideStore und der Android-Updater die Rückkehr als Update erkennen.
+- Android `versionCode` auf 37 erhöht; die frühere 2.5.0 verwendete 36.
+- Keine destruktiven Änderungen an bestehenden Nutzerdaten.
+
 ## 2.4.0
 
 - Kein vorgeschalteter Ladebildschirm: App-Oberfläche wird sofort angezeigt, Haushaltsdaten folgen progressiv.
