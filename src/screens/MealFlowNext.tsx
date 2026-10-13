@@ -15,8 +15,8 @@ import { DEFAULT_PREFERENCES, loadPreferences, savePreferences, type AppPreferen
 import { supabase } from '../lib/supabase';
 import {
   CATEGORY_NAMES, GROCERY_CATEGORIES, formatAmount, groceryCategory, guessCategory,
-  iso, loadDishCollection, loadWeek, normalize, saveDish, weekDates, weekStart,
-  weeklyGroceries, type Dish, type Grocery, type MealSlot, type PlannedDay
+  iso, loadDishCollection, loadWeek, loadWeeklyChecks, updateWeeklyCheck, normalize, saveDish, weekDates, weekStart,
+  weeklyGroceries, type Dish, type Grocery, type MealSlot, type PlannedDay, type WeeklyCheckState
 } from '../lib/mealflowNext';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -108,6 +108,7 @@ export default function MealFlowNext() {
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [days, setDays] = useState<PlannedDay[]>([]);
   const [shopping, setShopping] = useState<ShoppingItem[]>([]);
+  const [weeklyChecks, setWeeklyChecks] = useState<WeeklyCheckState>({ available: false, checked: {} });
   const [weekOffset, setWeekOffset] = useState(0);
   const weekOffsetRef = useRef(0);
   const [loading, setLoading] = useState(true);
@@ -148,13 +149,14 @@ export default function MealFlowNext() {
     if (initial) setLoading(true);
     try {
       const hh = await loadHousehold();
-      const [newDishes, newDays, newShopping] = await Promise.all([
-        loadDishCollection(), loadWeek(weekStart(weekOffsetRef.current)), loadShopping()
+      const [newDishes, newDays, newShopping, newChecks] = await Promise.all([
+        loadDishCollection(), loadWeek(weekStart(weekOffsetRef.current)), loadShopping(), loadWeeklyChecks(weekStart(weekOffsetRef.current))
       ]);
       setHousehold(hh);
       setDishes(newDishes);
       setDays(newDays);
       setShopping(newShopping);
+      setWeeklyChecks(newChecks);
       setMessage('');
     } catch (error) { setMessage('Synchronisierung: ' + paragraphError(error)); }
     finally { setLoading(false); }
@@ -169,6 +171,7 @@ export default function MealFlowNext() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plan_entries', filter: 'household_id=eq.' + household.id }, () => { void reload(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_recipes', filter: 'household_id=eq.' + household.id }, () => { void reload(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter: 'household_id=eq.' + household.id }, () => { void refreshShopping(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mealflow_weekly_checks', filter: 'household_id=eq.' + household.id }, () => { void loadWeeklyChecks(weekStart(weekOffsetRef.current)).then(setWeeklyChecks); })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
   }, [household?.id, reload, refreshShopping]);
@@ -176,7 +179,7 @@ export default function MealFlowNext() {
     const next = weekOffsetRef.current + delta;
     weekOffsetRef.current = next;
     setWeekOffset(next);
-    loadWeek(weekStart(next)).then(setDays).catch(error => setMessage(paragraphError(error)));
+    Promise.all([loadWeek(weekStart(next)), loadWeeklyChecks(weekStart(next))]).then(([plan, checks]) => { setDays(plan); setWeeklyChecks(checks); }).catch(error => setMessage(paragraphError(error)));
   };
   const changePrefs = (patch: Partial<AppPreferences>) => {
     const next = { ...preferences, ...patch };
@@ -251,7 +254,7 @@ export default function MealFlowNext() {
     else await addShoppingItem({ name: itemName.trim(), amount: value, unit: itemUnit });
     setShoppingEditor(null);
   }, false);
-  const grouped = useMemo(() => weeklyGroceries(days, dishes, shopping), [days, dishes, shopping]);
+  const grouped = useMemo(() => weeklyGroceries(days, dishes, shopping, weeklyChecks), [days, dishes, shopping, weeklyChecks]);
   const foundDishes = useMemo(() => dishes.filter(d => (category === 'Alle' || d.category === category)
     && (!search.trim() || normalize(d.title).includes(normalize(search)))), [dishes, category, search]);
   const dates = weekDates(weekStart(weekOffset));
@@ -292,7 +295,7 @@ export default function MealFlowNext() {
     </>;
 
     if (page === 'woche') return <>
-      <Header title="Wochenplan" subtitle="Schnell und einfach Gerichte planen" c={c} right={<IconButton name="calendar-month-outline" c={c} label="Zur aktuellen Woche" onPress={() => { weekOffsetRef.current = 0; setWeekOffset(0); void loadWeek(weekStart(0)).then(setDays); }} />} />
+      <Header title="Wochenplan" subtitle="Schnell und einfach Gerichte planen" c={c} right={<IconButton name="calendar-month-outline" c={c} label="Zur aktuellen Woche" onPress={() => { weekOffsetRef.current = 0; setWeekOffset(0); void Promise.all([loadWeek(weekStart(0)), loadWeeklyChecks(weekStart(0))]).then(([plan, checks]) => { setDays(plan); setWeeklyChecks(checks); }); }} />} />
       <View style={s.weekToolbar}>
         <IconButton name="chevron-left" label="Vorige Woche" c={c} onPress={() => moveWeek(-1)} />
         <View style={{ flex: 1, alignItems: 'center' }}>
@@ -363,7 +366,10 @@ export default function MealFlowNext() {
         {group.items.map(item => <View key={item.key} style={[s.shoppingItem, { borderTopColor: c.border }]}>
           <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: item.done }} accessibilityLabel={item.name + ' abhaken'} disabled={busy}
             onPress={() => void notify(async () => {
-              if (item.saved) await setShoppingDone(item.saved.id, !item.done);
+              if (item.source === 'planned' && weeklyChecks.available) {
+                await updateWeeklyCheck(weekStart(weekOffsetRef.current), item.key, !item.done);
+                setWeeklyChecks(await loadWeeklyChecks(weekStart(weekOffsetRef.current)));
+              } else if (item.saved) await setShoppingDone(item.saved.id, !item.done);
               else { const saved = await addShoppingItem({ name: item.name, amount: item.amount, unit: item.unit }); await setShoppingDone(saved.id, true); }
             }, false)} style={[s.checkbox, { borderColor: c.olive, backgroundColor: item.done ? c.olive : 'transparent' }]}>
             {item.done ? <MIcon name="check" color="#FFFFFF" size={16} /> : null}
