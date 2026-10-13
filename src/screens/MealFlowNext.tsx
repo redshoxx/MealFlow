@@ -103,6 +103,7 @@ export default function MealFlowNext() {
   const { width } = useWindowDimensions();
   const [preferences, setPreferences] = useState<AppPreferences>(DEFAULT_PREFERENCES);
   const [themeLoaded, setThemeLoaded] = useState(false);
+  const [systemScheme, setSystemScheme] = useState(Appearance.getColorScheme());
   const [page, setPage] = useState<Page>('gerichte');
   const [household, setHousehold] = useState<Household | null>(null);
   const [dishes, setDishes] = useState<Dish[]>([]);
@@ -136,9 +137,13 @@ export default function MealFlowNext() {
   const [itemUnit, setItemUnit] = useState('Stk.');
   const [joinCode, setJoinCode] = useState('');
   const [inviteCode, setInviteCode] = useState('');
-  const isDark = preferences.themeMode === 'dark' || (preferences.themeMode === 'system' && Appearance.getColorScheme() === 'dark');
+  const isDark = preferences.themeMode === 'dark' || (preferences.themeMode === 'system' && systemScheme === 'dark');
   const c = isDark ? PALETTES[preferences.cozyMode ? 'cozyDark' : 'dark'] : PALETTES[preferences.cozyMode ? 'cozy' : 'normal'];
 
+  useEffect(() => {
+    const subscription = Appearance.addChangeListener(({ colorScheme }) => setSystemScheme(colorScheme));
+    return () => subscription.remove();
+  }, []);
   useEffect(() => {
     let alive = true;
     loadPreferences().then(p => { if (alive) { setPreferences(p); setThemeLoaded(true); } })
