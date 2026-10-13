@@ -1,3 +1,4 @@
+import MealFlowNext from './src/screens/MealFlowNext';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -749,7 +750,7 @@ function Root() {
   }, []);
   if (checking) return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   if (!isCloudConfigured) return <View style={styles.loadingRoot}><Text style={styles.loadingTitle}>Cloud-Verbindung fehlt</Text></View>;
-  return authenticated ? <MainWebApp /> : <AuthScreen />;
+  return authenticated ? <MealFlowNext /> : <AuthScreen />;
 }
 
 export default function App() {
