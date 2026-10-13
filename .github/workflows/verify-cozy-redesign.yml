@@ -19,3 +19,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run build:web
       - run: test -f dist/index.html
+
+      - run: npx expo export --platform android --output-dir dist-android
+      - run: npx expo export --platform ios --output-dir dist-ios
