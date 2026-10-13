@@ -44,7 +44,7 @@ export function formatAmount(amount: number): string {
 }
 const UNIT_ALIASES: Record<string, string> = {
   gramm: 'g', gr: 'g', kilogramm: 'kg', liter: 'l', st: 'Stk.', stk: 'Stk.',
-  'stück': 'Stk.', stück: 'Stk.', zehe: 'Stk.', zehen: 'Stk.',
+  stück: 'Stk.', zehe: 'Stk.', zehen: 'Stk.',
   esslöffel: 'EL', teelöffel: 'TL', prise: 'Prise', prisen: 'Prise',
   dosen: 'Dose', päckchen: 'Pkg.', packung: 'Pkg.'
 };
@@ -53,14 +53,14 @@ export function parseIngredient(text: string): { name: string; amount: number; u
   if (!clean) return null;
   const match = clean.match(/^(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l|EL|TL|Stk\.?|Stück|Zehen?|Dosen?|Dose|Bund|Prisen?|Prise|Pkg\.?|Packung|Päckchen)?\s+(.+)$/i);
   if (!match) return { name: clean, amount: 1, unit: 'Stk.' };
-  const amount = Number(match[1].replace(',', '.'));
+  const amount = Number(match[1]!.replace(',', '.'));
   if (!Number.isFinite(amount) || amount <= 0) return null;
   const rawUnit = (match[2] ?? 'Stk.').toLocaleLowerCase('de-AT');
   let unit = UNIT_ALIASES[rawUnit] || (rawUnit === 'el' ? 'EL' : rawUnit === 'tl' ? 'TL' : rawUnit);
   let quantity = amount;
   if (unit === 'kg') { unit = 'g'; quantity *= 1000; }
   if (unit === 'l') { unit = 'ml'; quantity *= 1000; }
-  return { name: match[3].trim(), amount: quantity, unit };
+  return { name: match[3]!.trim(), amount: quantity, unit };
 }
 export function groceryCategory(name: string): string {
   const word = normalize(name);
@@ -167,7 +167,7 @@ export async function loadWeek(start: Date): Promise<PlannedDay[]> {
   const days = weekDates(start);
   const { data, error } = await supabase.from('meal_plan_entries')
     .select('planned_date,meal,meal_saskia,meal_portions,meal_saskia_portions').eq('household_id', householdId)
-    .gte('planned_date', iso(days[0])).lte('planned_date', iso(days[6]));
+    .gte('planned_date', iso(days[0]!)).lte('planned_date', iso(days[6]!));
   if (error) throw error;
   return (data ?? []).map((row: any) => ({
     plannedDate: String(row.planned_date),
