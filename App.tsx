@@ -1,4 +1,3 @@
-import MealFlowNext from './src/screens/MealFlowNext';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -1708,7 +1707,7 @@ function Root() {
   }, []);
   if (checking) return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   if (!isCloudConfigured) return <View style={styles.loadingScreen}><Text style={styles.configurationTitle}>Cloud-Verbindung fehlt</Text><Text style={styles.configurationText}>MealFlow benötigt die Supabase-Konfiguration, damit dein Haushalt sicher synchronisiert werden kann.</Text></View>;
-  return authenticated ? <MealFlowNext /> : <AuthScreen />;
+  return authenticated ? <MainApp /> : <AuthScreen />;
 }
 
 export default function App() { return <SafeAreaProvider><Root /></SafeAreaProvider>; }

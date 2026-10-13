@@ -1,21 +1,8 @@
-# MealFlow 2.5.0 – Cozy Redesign
+# MealFlow 2.4.0
 
 MealFlow ist eine deutschsprachige Haushalts-App für **iPhone, Android und Web**. Alle Plattformen verwenden denselben Supabase-Account und dieselben Realtime-Daten.
 
-## Neues App-Erlebnis (iOS, Android, Web)
-
-Der neue gemeinsame Bildschirm `src/screens/MealFlowNext.tsx` orientiert sich am freigegebenen cremefarbenen/olivgrünen Entwurf:
-
-- **Meine Gerichte** statt Rezeptsuche: persönliche Sammlung aus bislang geplanten Gerichten und gespeicherten Familienrezepten; Rezepteditor mit Zutaten, Mengen, Portionen und Zubereitungsschritten.
-- **Wochenplan** mit 7-Tage-Ansicht, Wochenwechsel, Gerichte-Auswahl, Portionen und weiterhin einem zweiten Gericht pro Tag.
-- **Einkaufsliste** mit automatisch aufsummierten Zutaten aus dem gewählten Wochenplan, Produktkategorien, Abhaken und manuellen Produkten.
-- **Einstellungen** mit Cozy Mode, Hell/Dunkel/System, Haushalt und Abmeldung.
-
-Die Anwendung verwendet die bisherigen Supabase-Accounts, Haushalte, Rezepte und Einkäufe. Keine Beispieldatensätze werden eingefügt.
-
-**Wichtig vor dem produktiven Rollout:** Die neue, additive SQL-Migration `supabase/migrations/202610131300_mealflow_cozy_redesign.sql` muss am zugehörigen Supabase-Projekt angewendet werden. Sie ergänzt Rezept-Metadaten, Portionen und wochenbezogene Einkaufs-Checkboxen, ohne bestehende Einträge zu löschen. Die PR enthält die Migration; sie wird durch einen GitHub-Merge allein **nicht** ausgeführt. Bis dahin sind neue Metadaten nicht vollständig speicherbar.
-
-## Vorherige Funktionen (Legacy-Code)
+## Hauptbereiche
 
 - **Heute** – neues Dashboard mit Wochenfortschritt, Abendessen, Saskias Gericht und kompakter Einkaufsübersicht
 - **4-Wochen-Plan** – aktuelle Kalenderwoche plus drei weitere Wochen; pro Tag Abendessen + „Für Saskia“
