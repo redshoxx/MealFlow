@@ -1,0 +1,21 @@
+name: MealFlow Cozy Redesign Verification
+on:
+  push:
+    branches:
+      - feature/mealflow-cozy-redesign
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run build:web
+      - run: test -f dist/index.html
