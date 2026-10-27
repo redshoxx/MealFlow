@@ -13,6 +13,8 @@ on:
       - 'assets/**'
       - 'vercel.json'
       - '.github/workflows/build-web.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

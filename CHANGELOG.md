@@ -1,3 +1,12 @@
+## 2.5.2 — Performance und flüssigere Bedienung
+
+- iPhone und Android: Einkaufszeilen werden nur bei relevanten Änderungen erneut gerendert; stabile Aktionen reduzieren unnötige Render-Arbeit beim Bearbeiten der Liste.
+- Web: Ein geändertes Gericht wird direkt im jeweiligen Wochenplantag angezeigt, ohne Haushalt, Einkaufsliste und den vollständigen Vier-Wochen-Plan erneut aus Supabase zu laden.
+- Web: Einkaufsgruppen, offene und erledigte Produkte werden nur bei Listenänderungen neu berechnet.
+- Supabase: Profilnamen werden für 30 Sekunden zwischengespeichert, damit aufeinanderfolgende Einkaufs- und Haushaltsabfragen nicht dieselben Profile erneut laden.
+- Profilnamen-Cache wird bei Abmeldung/Haushaltswechsel zurückgesetzt und nach Änderung des eigenen Namens aktualisiert.
+- Version 2.5.2, iOS Build 38, Android Version Code 38. Keine Datenbankmigration und keine Änderungen am bestehenden Design.
+
 ## 2.5.1 — Rückkehr zum bisherigen Design
 
 - Das bekannte MealFlow-Design und alle Funktionen von Version 2.4.1 sind wiederhergestellt.

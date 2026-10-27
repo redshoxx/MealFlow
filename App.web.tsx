@@ -404,9 +404,9 @@ function ShoppingScreen({ household, items, setItems, onSettings }: {
   const [completedOpen, setCompletedOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const openItems = items.filter((item) => !item.done);
-  const completed = items.filter((item) => item.done);
-  const groups = groupShopping(openItems);
+  const openItems = useMemo(() => items.filter((item) => !item.done), [items]);
+  const completed = useMemo(() => items.filter((item) => item.done), [items]);
+  const groups = useMemo(() => groupShopping(openItems), [openItems]);
 
   const openForm = (item?: ShoppingItem) => {
     setEditing(item ?? null);
@@ -725,7 +725,17 @@ function MainWebApp() {
   const content = tab === 'heute'
     ? <TodayOverviewScreen household={household} items={items} meals={meals} saskiaMeals={saskiaMeals} onNavigate={navigate} onSettings={() => setSettingsOpen(true)} />
     : tab === 'woche'
-      ? <MealPlanOverviewScreen household={household} meals={meals} saskiaMeals={saskiaMeals} onSettings={() => setSettingsOpen(true)} onSave={async (date, slot, title) => { if (slot === 'saskia') await saveSaskiaMeal(date, title || null); else await saveMeal(date, title || null); await refresh(); }} />
+      ? <MealPlanOverviewScreen household={household} meals={meals} saskiaMeals={saskiaMeals} onSettings={() => setSettingsOpen(true)} onSave={async (date, slot, title) => {
+        // Only the edited day changes. Realtime keeps other devices in sync.
+        ++planRevision.current;
+        if (slot === 'saskia') {
+          await saveSaskiaMeal(date, title || null);
+          setSaskiaMeals((current) => ({ ...current, [date]: title }));
+        } else {
+          await saveMeal(date, title || null);
+          setMeals((current) => ({ ...current, [date]: title }));
+        }
+      }} />
       : tab === 'einkauf'
         ? <ShoppingScreen household={household} items={items} setItems={updateShoppingItems} onSettings={() => setSettingsOpen(true)} />
         : <ProteinRecipesScreen onSettings={() => setSettingsOpen(true)} onGoShopping={() => navigate('einkauf')} onPlanChanged={(date, title) => { ++planRevision.current; setMeals((current) => ({ ...current, [date]: title })); }} />;
