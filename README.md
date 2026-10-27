@@ -1,4 +1,4 @@
-# MealFlow 2.4.0
+# MealFlow 2.5.2
 
 MealFlow ist eine deutschsprachige Haushalts-App für **iPhone, Android und Web**. Alle Plattformen verwenden denselben Supabase-Account und dieselben Realtime-Daten.
 
