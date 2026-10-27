@@ -1595,11 +1595,11 @@ function MainApp() {
     };
   }, [household?.id]);
 
-  const setShoppingOptimistic: React.Dispatch<React.SetStateAction<ShoppingItem[]>> = (update) => {
+  const setShoppingOptimistic: React.Dispatch<React.SetStateAction<ShoppingItem[]>> = React.useCallback((update: React.SetStateAction<ShoppingItem[]>) => {
     // An in-flight reconciliation must never replace a newer local edit.
     shoppingLoadGeneration.current += 1;
     setItems(update);
-  };
+  }, []);
 
   const changeTab = (next: Tab) => {
     setTab(next);
