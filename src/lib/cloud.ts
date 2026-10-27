@@ -93,6 +93,8 @@ type HistoryRow = {
 };
 
 let activeHouseholdId: string | null = null;
+const PROFILE_NAME_CACHE_TTL_MS = 30_000;
+const profileNameCache = new Map<string, { name: string; expiresAt: number }>();
 
 function requireCloud() {
   if (!isCloudConfigured) throw new Error('Die Cloud-Synchronisierung ist noch nicht konfiguriert.');
@@ -109,6 +111,7 @@ async function requireUser() {
 
 export function clearHouseholdCache() {
   activeHouseholdId = null;
+  profileNameCache.clear();
 }
 
 export async function getActiveHouseholdId(force = false): Promise<string> {
@@ -121,12 +124,35 @@ export async function getActiveHouseholdId(force = false): Promise<string> {
   return activeHouseholdId;
 }
 
-async function loadProfileNames(userIds: string[]) {
+async function loadProfileNames(userIds: string[]): Promise<Map<string, string>> {
   const ids = Array.from(new Set(userIds.filter(Boolean)));
-  if (!ids.length) return new Map<string, string>();
-  const { data, error } = await supabase.from('profiles').select('id,display_name').in('id', ids);
-  if (error) throw error;
-  return new Map((data ?? []).map((row: any) => [String(row.id), String(row.display_name || 'Mitglied')]));
+  const names = new Map<string, string>();
+  const uncached: string[] = [];
+  const now = Date.now();
+
+  for (const id of ids) {
+    const cached = profileNameCache.get(id);
+    if (cached && cached.expiresAt > now) {
+      names.set(id, cached.name);
+    } else {
+      profileNameCache.delete(id);
+      uncached.push(id);
+    }
+  }
+
+  if (uncached.length) {
+    const { data, error } = await supabase.from('profiles').select('id,display_name').in('id', uncached);
+    if (error) throw error;
+    const expiresAt = Date.now() + PROFILE_NAME_CACHE_TTL_MS;
+    for (const row of data ?? []) {
+      const id = String(row.id);
+      const name = String(row.display_name || 'Mitglied');
+      names.set(id, name);
+      profileNameCache.set(id, { name, expiresAt });
+    }
+  }
+
+  return names;
 }
 
 export async function loadHousehold(): Promise<Household> {
@@ -176,6 +202,7 @@ export async function updateMyDisplayName(name: string) {
   const user = await requireUser();
   const { error } = await requireCloud().from('profiles').update({ display_name: clean }).eq('id', user.id);
   if (error) throw error;
+  profileNameCache.set(user.id, { name: clean, expiresAt: Date.now() + PROFILE_NAME_CACHE_TTL_MS });
 }
 
 export async function joinHouseholdByCode(code: string): Promise<string> {
