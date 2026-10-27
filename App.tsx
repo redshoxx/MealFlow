@@ -943,7 +943,7 @@ function PlanScreen({ household, meals, saskiaMeals, setMeals, setSaskiaMeals, o
   </>;
 }
 
-function ShoppingProductRow({ item, compact, onToggle, onEdit, onDelete }: { item: ShoppingItem; compact: boolean; onToggle: (item: ShoppingItem) => void; onEdit: (item: ShoppingItem) => void; onDelete: (item: ShoppingItem) => void }) {
+const ShoppingProductRow = React.memo(function ShoppingProductRow({ item, compact, onToggle, onEdit, onDelete }: { item: ShoppingItem; compact: boolean; onToggle: (item: ShoppingItem) => void; onEdit: (item: ShoppingItem) => void; onDelete: (item: ShoppingItem) => void }) {
   const meta = [`${formatAmount(item.amount)} ${item.unit}`, item.addedByName ? `von ${item.addedByName}` : null, item.done && item.completedByName ? `erledigt von ${item.completedByName}` : null].filter(Boolean).join(' · ');
   return (
     <View style={[styles.shoppingRowV214, compact && styles.shoppingRowCompact]}>
@@ -976,7 +976,7 @@ function ShoppingProductRow({ item, compact, onToggle, onEdit, onDelete }: { ite
       </View>
     </View>
   );
-}
+});
 
 function ShoppingScreen({
   household,
@@ -1032,9 +1032,9 @@ function ShoppingScreen({
     return () => clearTimeout(timer);
   }, [undoItem]);
 
-  const feedback = () => {
+  const feedback = React.useCallback(() => {
     if (preferences.hapticsEnabled) Haptics.selectionAsync().catch(() => undefined);
-  };
+  }, [preferences.hapticsEnabled]);
 
   const openAdd = () => {
     setEditingItem(null);
@@ -1045,14 +1045,14 @@ function ShoppingScreen({
     feedback();
   };
 
-  const openEdit = (item: ShoppingItem) => {
+  const openEdit = React.useCallback((item: ShoppingItem) => {
     setEditingItem(item);
     setName(item.name);
     setAmount(item.amount);
     setUnit(item.unit);
     setAddOpen(true);
     feedback();
-  };
+  }, [feedback]);
 
   const closeProductEditor = () => {
     setAddOpen(false);
@@ -1101,7 +1101,7 @@ function ShoppingScreen({
     }
   };
 
-  const toggle = async (item: ShoppingItem) => {
+  const toggle = React.useCallback(async (item: ShoppingItem) => {
     const nextDone = !item.done;
     setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, done: nextDone, completedByName: nextDone ? household.myDisplayName : null } : entry));
     feedback();
@@ -1110,9 +1110,9 @@ function ShoppingScreen({
       setItems((current) => current.map((entry) => entry.id === item.id && entry.done === nextDone ? item : entry));
       Alert.alert('Änderung nicht gespeichert', germanError(error?.message));
     }
-  };
+  }, [setItems, household.myDisplayName, feedback]);
 
-  const remove = async (item: ShoppingItem) => {
+  const remove = React.useCallback(async (item: ShoppingItem) => {
     setItems((current) => current.filter((entry) => entry.id !== item.id));
     setUndoItem(item);
     if (preferences.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
@@ -1122,7 +1122,7 @@ function ShoppingScreen({
       setItems((current) => [item, ...current]);
       Alert.alert('Löschen nicht möglich', germanError(error?.message));
     }
-  };
+  }, [setItems, preferences.hapticsEnabled]);
 
   const undoDelete = async () => {
     const item = undoItem;
@@ -1168,7 +1168,7 @@ function ShoppingScreen({
       <SectionTitle title="Offen" />
       {active.length ? <View style={styles.shoppingCategoryList}>{activeGroups.map((group) => <View key={group.key} style={styles.shoppingCategorySection}>
         <View style={styles.shoppingCategoryHeader}><Text style={styles.shoppingCategoryTitle}>{group.label}</Text><Text style={styles.shoppingCategoryCount}>{group.items.length}</Text></View>
-        <SurfaceCard style={styles.listCard}>{group.items.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard>
+        <SurfaceCard style={styles.listCard}>{group.items.map((item) => <ShoppingProductRow key={`${item.id}-${colors.background}-${colors.accent}`} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard>
       </View>)}</View> : <SurfaceCard><EmptyState icon="cart-check" title="Alles erledigt" text="Eure gemeinsame Einkaufsliste ist aktuell leer." actionLabel="Produkt hinzufügen" onAction={openAdd} /></SurfaceCard>}
 
       {preferences.showCompletedShopping && completed.length ? <View style={styles.completedSection}>
@@ -1176,7 +1176,7 @@ function ShoppingScreen({
           <View style={styles.completedToggleLeft}><View style={styles.completedToggleIcon}><MaterialCommunityIcons name="check-all" size={19} color={colors.accent} /></View><View><Text style={styles.completedToggleTitle}>Erledigt</Text><Text style={styles.completedToggleMeta}>{completed.length} {completed.length === 1 ? 'Produkt' : 'Produkte'}</Text></View></View>
           <MaterialCommunityIcons name={completedExpanded ? 'chevron-up' : 'chevron-down'} size={24} color={colors.textTertiary} />
         </Pressable>
-        {completedExpanded ? <SurfaceCard style={styles.listCard}>{completedSorted.map((item) => <ShoppingProductRow key={item.id} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard> : null}
+        {completedExpanded ? <SurfaceCard style={styles.listCard}>{completedSorted.map((item) => <ShoppingProductRow key={`${item.id}-${colors.background}-${colors.accent}`} item={item} compact={preferences.compactShopping} onToggle={toggle} onEdit={openEdit} onDelete={remove} />)}</SurfaceCard> : null}
       </View> : null}
       <Text style={styles.swipeHint}>Zum Löschen den kleinen Papierkorb beim Produkt verwenden.</Text>
     </ScrollView>
